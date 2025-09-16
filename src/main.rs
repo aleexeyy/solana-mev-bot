@@ -1,9 +1,9 @@
 use solana_client::{
-    client_error::reqwest::header::PUBLIC_KEY_PINS_REPORT_ONLY, nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient}, rpc_config::RpcAccountInfoConfig
+   nonblocking::{rpc_client::RpcClient},
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
-    account::Account, pubkey::{self, Pubkey}, signature::Signer, signer::keypair::Keypair
+    account::Account, pubkey::{Pubkey}
 };
 
 use orca_whirlpools_client::{
@@ -12,15 +12,10 @@ use orca_whirlpools_client::{
 use serde_json;
 
 mod bootstrap;
-mod find_matching_pairs;
 use std::time::Instant;
 use std::env;
-use tokio::{fs::File, io::{AsyncWriteExt, BufWriter}};
 
-// trait Pool {
-//     fn get_price(&self) -> f64;
-//     fn get_current_tick(&self) -> i64;
-// }
+mod build_graph;
 
 trait WhirlpoolExt {
     fn price(&self) -> f64;
@@ -44,8 +39,6 @@ async fn main() -> anyhow::Result<()> {
         let duration = start.elapsed();
         println!("Bootstrap took: {:?}", duration);
     }
-
-    let _ = find_matching_pairs::get_matching_pairs();
 
     return Ok(());
 

@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct TokenInfo {
     pub address: Option<String>,
     pub decimals: Option<u8>,
@@ -13,6 +13,7 @@ pub struct PoolBootstrap {
     pub address: Option<String>,
     pub fee_rate: Option<u32>,
     pub pool_type: Option<String>,
+    pub dex: Option<String>,
     pub tick_spacing: Option<u64>,
     pub token_a: TokenInfo,
     pub token_b: TokenInfo,

@@ -6,7 +6,7 @@ use solana_sdk::pubkey::Pubkey;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 use super::pool_schema::{PoolBootstrap, TokenInfo};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -52,7 +52,7 @@ struct RaydiumResponse {
     data: RaydiumData,
 }
 
-pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Error + Send + Sync>> {
 
     let file = File::create("./cached-blockchain-data/raydium_pools.json").await?;
     let mut writer = BufWriter::new(file);
@@ -63,7 +63,7 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
     let mut url = Url::parse("https://api-v3.raydium.io/pools/info/list?poolType=all&poolSortField=volume7d&sortType=desc&pageSize=100&page=1").unwrap();
     let mut first_item = true;
     let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
-
+    let mut tokens = HashSet::new();
     for _ in 0..100 {
 
         let response = client.get(url.clone()).send().await?;
@@ -85,10 +85,24 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
 
             if let Some((token_a_vault, token_b_vault)) = vaults.get(&pool_index) {
 
+                tokens.insert(TokenInfo { 
+                        address: pool.token_a.address.clone(),
+                        decimals: pool.token_a.decimals, 
+                        name: pool.token_a.name.clone(),
+                        symbol: pool.token_a.symbol.clone(),
+                    });
+                tokens.insert(TokenInfo { 
+                        address: pool.token_b.address.clone(),
+                        decimals: pool.token_b.decimals, 
+                        name: pool.token_b.name.clone(),
+                        symbol: pool.token_b.symbol.clone(),
+                    });
+
                 let generic_pool = PoolBootstrap {
                     address: pool.id.clone(),
                     fee_rate: pool.config.as_ref().and_then(|c| c.trade_fee_rate),
                     pool_type: pool.pool_type.clone(),
+                    dex: Some("Raydium".to_string()),
                     tick_spacing: pool.config.as_ref().and_then(|c| c.tick_spacing),
                     token_a: TokenInfo { 
                         address: pool.token_a.address.clone(),
@@ -135,7 +149,9 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
     writer.write_all(b"]}").await?;
     writer.flush().await?;
 
-    Ok(())
+    // println!("Raydium Tokens: {:?}", &tokens);
+
+    Ok(tokens)
 }
 
 

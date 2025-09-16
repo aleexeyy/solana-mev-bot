@@ -3,7 +3,7 @@ use tokio::{fs::File, io::{AsyncWriteExt, BufWriter}};
 use serde::{Serialize, Deserialize};
 use serde_path_to_error::deserialize;
 use super::pool_schema::{PoolBootstrap, TokenInfo};
-
+use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OrcaPool {
@@ -43,7 +43,7 @@ struct Cursor {
     _previous: Option<String>,
 }
 
-pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Error + Send + Sync>> {
     let file = File::create("./cached-blockchain-data/orca_pools.json").await?;
     let mut writer = BufWriter::new(file);
     writer.write_all(b"{\"all_pools\":[").await?;
@@ -51,7 +51,7 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
     let mut first_item = true;
     let client = reqwest::Client::new();
     let mut url = Url::parse("https://api.orca.so/v2/solana/pools?sortBy=volume&sortDirection=desc").unwrap();
-
+    let mut tokens = HashSet::new();
     for _ in 0..200 {
         let response = client.get(url.clone()).send().await?;
         let text = response.text().await?;
@@ -63,10 +63,15 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
         let pools = deserialized_response.data;
 
         for pool in &pools {
+
+            tokens.insert(pool.token_a.clone());
+            tokens.insert(pool.token_b.clone());
+
             let generic_pool = PoolBootstrap {
                 address: pool.address.clone(),
                 fee_rate: pool.fee_rate,
-                pool_type: pool.pool_type.clone(),
+                pool_type: Some("Concentrated".to_string()),
+                dex: Some("Orca".to_string()),
                 tick_spacing: pool.tick_spacing,
                 token_a: pool.token_a.clone(),
                 token_b: pool.token_b.clone(),
@@ -105,5 +110,7 @@ pub async fn fetch_pools() -> Result<(), Box<dyn std::error::Error + Send + Sync
     writer.write_all(b"]}").await?;
     writer.flush().await?;
 
-    Ok(())
+    // println!("Orca Tokens: {:?}", &tokens);
+
+    Ok(tokens)
 }
