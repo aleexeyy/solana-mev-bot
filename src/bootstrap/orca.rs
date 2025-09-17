@@ -2,7 +2,7 @@ use reqwest::Url;
 use tokio::{fs::File, io::{AsyncWriteExt, BufWriter}};
 use serde::{Serialize, Deserialize};
 use serde_path_to_error::deserialize;
-use super::pool_schema::{PoolBootstrap, TokenInfo};
+use super::pool_schema::{PoolInfo, TokenInfo, PoolType, DexType};
 use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,14 +67,14 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
             tokens.insert(pool.token_a.clone());
             tokens.insert(pool.token_b.clone());
 
-            let generic_pool = PoolBootstrap {
+            let generic_pool = PoolInfo {
                 address: pool.address.clone(),
                 fee_rate: pool.fee_rate,
-                pool_type: Some("Concentrated".to_string()),
-                dex: Some("Orca".to_string()),
+                pool_type: Some(PoolType::Concentrated),
+                dex: Some(DexType::Orca),
                 tick_spacing: pool.tick_spacing,
-                token_a: pool.token_a.clone(),
-                token_b: pool.token_b.clone(),
+                token_a: Some(pool.token_a.clone()),
+                token_b: Some(pool.token_b.clone()),
                 token_vault_a: pool.token_vault_a.clone(),
                 token_vault_b: pool.token_vault_b.clone(),
                 config: pool.config.clone(),

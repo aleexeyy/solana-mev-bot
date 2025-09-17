@@ -40,6 +40,8 @@ async fn main() -> anyhow::Result<()> {
         println!("Bootstrap took: {:?}", duration);
     }
 
+    let _ = build_graph::build_graph();
+
     return Ok(());
 
     //https://api.mainnet-beta.solana.com

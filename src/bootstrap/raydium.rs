@@ -5,7 +5,7 @@ use serde_path_to_error::deserialize;
 use solana_sdk::pubkey::Pubkey;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
-use super::pool_schema::{PoolBootstrap, TokenInfo};
+use super::pool_schema::{PoolInfo, TokenInfo, PoolType, DexType};
 use std::collections::{HashMap, HashSet};
 
 
@@ -97,25 +97,32 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
                         name: pool.token_b.name.clone(),
                         symbol: pool.token_b.symbol.clone(),
                     });
+                
+                let pool_type = match pool.pool_type.as_deref() {
+                    Some("Concentrated") => Some(PoolType::Concentrated),
+                    Some("Standard") => Some(PoolType::Standard),
+                    _ => None,
+                };
 
-                let generic_pool = PoolBootstrap {
+
+                let generic_pool = PoolInfo {
                     address: pool.id.clone(),
                     fee_rate: pool.config.as_ref().and_then(|c| c.trade_fee_rate),
-                    pool_type: pool.pool_type.clone(),
-                    dex: Some("Raydium".to_string()),
+                    pool_type: pool_type,
+                    dex: Some(DexType::Raydium),
                     tick_spacing: pool.config.as_ref().and_then(|c| c.tick_spacing),
-                    token_a: TokenInfo { 
+                    token_a: Some(TokenInfo { 
                         address: pool.token_a.address.clone(),
                         decimals: pool.token_a.decimals, 
                         name: pool.token_a.name.clone(),
                         symbol: pool.token_a.symbol.clone(),
-                    },
-                    token_b: TokenInfo { 
+                    }),
+                    token_b: Some(TokenInfo { 
                         address: pool.token_b.address.clone(),
                         decimals: pool.token_b.decimals, 
                         name: pool.token_b.name.clone(),
                         symbol: pool.token_b.symbol.clone(),
-                    },
+                    }),
                     token_vault_a: Some(token_a_vault.to_string()),
                     token_vault_b: Some(token_b_vault.to_string()),
                     config: pool.config.as_ref().and_then(|c| c.id.clone()),
