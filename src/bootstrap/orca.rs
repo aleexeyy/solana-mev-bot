@@ -50,9 +50,11 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
 
     let mut first_item = true;
     let client = reqwest::Client::new();
-    let mut url = Url::parse("https://api.orca.so/v2/solana/pools?sortBy=volume&sortDirection=desc").unwrap();
+    let mut url = Url::parse("https://api.orca.so/v2/solana/pools?sortBy=volume24h&sortDirection=desc").unwrap();
     let mut tokens = HashSet::new();
-    for _ in 0..200 {
+
+    //200
+    for _ in 0..10 {
         let response = client.get(url.clone()).send().await?;
         let text = response.text().await?;
 
@@ -100,7 +102,7 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
 
         url.query_pairs_mut()
             .clear()
-            .append_pair("sortBy", "volume")
+            .append_pair("sortBy", "volume24h")
             .append_pair("sortDirection", "desc")
             .append_pair("next", &next_page);
 

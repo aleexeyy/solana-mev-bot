@@ -26,7 +26,9 @@ strip = "debuginfo"
 
 [dependencies]
 anyhow = "1.0.99"
+futures = "0.3.31"
 hex = "0.4.3"
+lazy_static = "1.5.0"
 orca_whirlpools = "5.0.0"
 orca_whirlpools_client = "5.0.0"
 reqwest = "0.12.23"
@@ -39,3 +41,5 @@ solana-commitment-config = "3.0.0"
 solana-sdk = "3.0.0"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-stream = "0.1.17"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"

@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 pub enum DexType {
     Orca,
     Raydium,
+    Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,4 +70,12 @@ impl PoolInfo {
 
         Ok(())
     }
+}
+
+
+#[derive(Debug)]
+pub struct PoolUpdate {
+    pub new_liquidity: u128,
+    pub new_sqrt_price: u128,
+    pub new_current_tick_index: i32,
 }

@@ -64,7 +64,7 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
     let mut first_item = true;
     let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
     let mut tokens = HashSet::new();
-    for _ in 0..100 {
+    for _ in 0..5 {
 
         let response = client.get(url.clone()).send().await?;
         let text = response.text().await?;
