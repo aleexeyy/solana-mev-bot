@@ -1,10 +1,13 @@
+use super::pool_schema::{DexType, PoolInfo, PoolType, TokenInfo};
+use anyhow::{Context, Result};
 use reqwest::Url;
-use tokio::{fs::File, io::{AsyncWriteExt, BufWriter}};
-use serde::{Serialize, Deserialize};
-use serde_path_to_error::deserialize;
-use super::pool_schema::{PoolInfo, TokenInfo, PoolType, DexType};
+use serde::{Deserialize, Serialize};
+use serde_json::Deserializer;
 use std::collections::HashSet;
-
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, BufWriter},
+};
 #[derive(Debug, Serialize, Deserialize)]
 struct OrcaPool {
     address: Option<String>,
@@ -23,7 +26,7 @@ struct OrcaPool {
     #[serde(rename = "tokenVaultB")]
     token_vault_b: Option<String>,
     #[serde(rename = "whirlpoolsConfig")]
-    config: Option<String>
+    config: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -43,29 +46,44 @@ struct Cursor {
     _previous: Option<String>,
 }
 
-pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Error + Send + Sync>> {
-    let file = File::create("./cached-blockchain-data/orca_pools.json").await?;
+pub async fn fetch_pools() -> Result<HashSet<TokenInfo>> {
+    let file = File::create("./cached-blockchain-data/orca_pools.json")
+        .await
+        .context("Failed to create Orca pools output file")?;
     let mut writer = BufWriter::new(file);
-    writer.write_all(b"{\"all_pools\":[").await?;
+    writer
+        .write_all(b"{\"all_pools\":[")
+        .await
+        .context("Failed to write JSON header")?;
 
     let mut first_item = true;
     let client = reqwest::Client::new();
-    let mut url = Url::parse("https://api.orca.so/v2/solana/pools?sortBy=volume24h&sortDirection=desc").unwrap();
+    let mut url =
+        Url::parse("https://api.orca.so/v2/solana/pools?sortBy=volume24h&sortDirection=desc")
+            .context("Invalid Orca API URL")?;
     let mut tokens = HashSet::new();
 
-    //200
+    // Up to 2000 pools (10 pages × 200 per page)
     for _ in 0..10 {
-        let response = client.get(url.clone()).send().await?;
-        let text = response.text().await?;
+        let response = client
+            .get(url.clone())
+            .send()
+            .await
+            .context("HTTP request to Orca API failed")?;
 
-        let mut deserializer = serde_json::Deserializer::from_str(&text);
-        let deserialized_response: OrcaPoolsResponse = deserialize(&mut deserializer)
-            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
+        let text = response
+            .text()
+            .await
+            .context("Failed to read Orca API response body")?;
+
+        let mut deserializer = Deserializer::from_str(&text);
+        let deserialized_response: OrcaPoolsResponse =
+            serde_path_to_error::deserialize(&mut deserializer)
+                .context("Failed to deserialize Orca response")?;
 
         let pools = deserialized_response.data;
 
         for pool in &pools {
-
             tokens.insert(pool.token_a.clone());
             tokens.insert(pool.token_b.clone());
 
@@ -87,11 +105,20 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
             }
 
             if !first_item {
-                writer.write_all(b",").await?;
+                writer
+                    .write_all(b",")
+                    .await
+                    .context("Failed to write JSON separator")?;
             }
 
-            let json = serde_json::to_string(&generic_pool)?;
-            writer.write_all(json.as_bytes()).await?;
+            let json =
+                serde_json::to_string(&generic_pool).context("Failed to serialize PoolInfo")?;
+
+            writer
+                .write_all(json.as_bytes())
+                .await
+                .context("Failed to write pool JSON")?;
+
             first_item = false;
         }
 
@@ -105,14 +132,13 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>, Box<dyn std::error::Err
             .append_pair("sortBy", "volume24h")
             .append_pair("sortDirection", "desc")
             .append_pair("next", &next_page);
-
-        // println!("Fetched {} pools in this batch", pools.len());
     }
 
-    writer.write_all(b"]}").await?;
-    writer.flush().await?;
-
-    // println!("Orca Tokens: {:?}", &tokens);
+    writer
+        .write_all(b"]}")
+        .await
+        .context("Failed to write JSON footer")?;
+    writer.flush().await.context("Failed to flush writer")?;
 
     Ok(tokens)
 }

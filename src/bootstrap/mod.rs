@@ -1,20 +1,14 @@
-use tokio::{fs::{create_dir_all}};
+use tokio::fs::create_dir_all;
 
 pub mod orca;
-pub mod raydium;
 pub mod pool_schema;
-
+pub mod raydium;
 
 pub async fn update_all() -> Result<(), Box<dyn std::error::Error>> {
-
     create_dir_all("./cached-blockchain-data").await?;
 
-    let orca_bootstrap_task = tokio::spawn(async {
-        orca::fetch_pools().await.unwrap()
-    });
-    let raydium_bootstrap_task = tokio::spawn(async {
-        raydium::fetch_pools().await.unwrap()
-    });
+    let orca_bootstrap_task = tokio::spawn(async { orca::fetch_pools().await.unwrap() });
+    let raydium_bootstrap_task = tokio::spawn(async { raydium::fetch_pools().await.unwrap() });
 
     let (_, _) = tokio::try_join!(orca_bootstrap_task, raydium_bootstrap_task)?;
 

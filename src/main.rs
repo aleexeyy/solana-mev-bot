@@ -1,26 +1,20 @@
-use solana_client::{
-   nonblocking::{rpc_client::RpcClient},
-};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
-use solana_sdk::{
-    account::Account, pubkey::Pubkey
-};
-use serde_json;
+use solana_sdk::{account::Account, pubkey::Pubkey};
 mod bootstrap;
-use std::{fs::{read_dir, read_to_string}, sync::Arc, time::Instant};
 use std::env;
-
+use std::{
+    fs::{read_dir, read_to_string},
+    sync::Arc,
+    time::Instant,
+};
 mod graph;
 use futures::future::join_all;
-
-use tracing::{info, warn, error};
-use tracing_subscriber;
+use tracing::{info, warn};
 mod decoders;
 
-
 fn load_pools() -> anyhow::Result<Vec<Pubkey>> {
-
     // want all files with a .json extension
     let pool_files = Vec::from_iter(
         read_dir("./cached-blockchain-data")?
@@ -33,8 +27,7 @@ fn load_pools() -> anyhow::Result<Vec<Pubkey>> {
 
     for pool_path in pool_files {
         let raw_json = read_to_string(pool_path)?;
-        let deserialized: bootstrap::pool_schema::StoredPools =
-            serde_json::from_str(&raw_json)?;
+        let deserialized: bootstrap::pool_schema::StoredPools = serde_json::from_str(&raw_json)?;
 
         addresses.extend(
             deserialized
@@ -48,11 +41,8 @@ fn load_pools() -> anyhow::Result<Vec<Pubkey>> {
     Ok(addresses)
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<()> {
-
     tracing_subscriber::fmt::init();
 
     let args: Vec<String> = env::args().collect();
@@ -65,15 +55,18 @@ async fn main() -> Result<()> {
         println!("Bootstrap took: {:?}", duration);
     }
 
-    let mut graph = graph::build_graph()?;
+    let mut graph = graph::Graph::build_graph()?;
 
     //https://api.mainnet-beta.solana.com
     //https://api.devnet.solana.com
-    let client = Arc::new(RpcClient::new_with_commitment("https://api.mainnet-beta.solana.com".to_string(), CommitmentConfig::confirmed()));
+    let client = Arc::new(RpcClient::new_with_commitment(
+        "https://api.mainnet-beta.solana.com".to_string(),
+        CommitmentConfig::confirmed(),
+    ));
 
     let addresses = load_pools().unwrap();
     info!("Amount of Addresses: {:?}", addresses.len());
-    
+
     let chunks: Vec<Vec<Pubkey>> = addresses.chunks(100).map(|c| c.to_vec()).collect();
     let number_of_chunks = chunks.len();
     let start = Instant::now();
@@ -81,15 +74,17 @@ async fn main() -> Result<()> {
     let accounts_data: Vec<(Pubkey, Account)> = join_all(chunks.into_iter().map(|chunk| {
         let client = Arc::clone(&client);
         let chunk_clone = chunk.clone(); // local chunk
-        tokio::spawn(async move { 
+        tokio::spawn(async move {
             let accounts = client.get_multiple_accounts(&chunk_clone).await.unwrap();
             // zip addresses with accounts, keep only Some(account)
-            chunk_clone.into_iter()
+            chunk_clone
+                .into_iter()
                 .zip(accounts.into_iter())
                 .filter_map(|(address, account_opt)| account_opt.map(|acc| (address, acc)))
                 .collect::<Vec<_>>()
         })
-    })).await
+    }))
+    .await
     .into_iter()
     .filter_map(|join_result| match join_result {
         Ok(accounts) => Some(accounts), // Vec<(Pubkey, Account)>
@@ -100,7 +95,7 @@ async fn main() -> Result<()> {
     })
     .flatten()
     .collect();
-    
+
     for (address, account) in accounts_data {
         match decoders::decode_account(&account) {
             Ok(data) => {
@@ -114,10 +109,11 @@ async fn main() -> Result<()> {
         }
     }
 
-    // info!("Testing Received Data: {:?}", pools_data);
     let duration = start.elapsed();
     info!(number_of_chunks, "Number of chunks: ");
-    info!("Average Duration per Chunk: {:?}", duration.div_f32(number_of_chunks as f32));
+    info!(
+        "Average Duration per Chunk: {:?}",
+        duration.div_f32(number_of_chunks as f32)
+    );
     Ok(())
-
 }
