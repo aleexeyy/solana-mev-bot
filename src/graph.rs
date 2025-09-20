@@ -348,6 +348,6 @@ mod tests {
         assert_eq!(graph.edges[0].address, test_addres);
         assert_eq!(graph.edges[0].liquidity.unwrap(), 123456);
         assert_eq!(graph.edges[0].sqrt_price.unwrap(), 1234567);
-        assert_eq!(graph.edges[0].current_tick_index.unwrap(), -123);
+        assert_eq!(graph.edges[0].current_tick_index.unwrap(), -1234);
     }
 }
