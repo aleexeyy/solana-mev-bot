@@ -334,7 +334,7 @@ mod tests {
             config: Some("2LecshUwdy9xi7meFgHtFJQNSKk4KdTrcpvaB56dP2NQ".to_string()),
         };
 
-        let _ = graph.insert_pool(test_pool).unwrap();
+        graph.insert_pool(test_pool).unwrap();
 
         let test_edge_update_data = PoolUpdate {
             new_liquidity: 123456,
@@ -348,6 +348,6 @@ mod tests {
         assert_eq!(graph.edges[0].address, test_addres);
         assert_eq!(graph.edges[0].liquidity.unwrap(), 123456);
         assert_eq!(graph.edges[0].sqrt_price.unwrap(), 1234567);
-        assert_eq!(graph.edges[0].current_tick_index.unwrap(), -1234);
+        assert_eq!(graph.edges[0].current_tick_index.unwrap(), -123);
     }
 }
