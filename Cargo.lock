@@ -5061,6 +5061,7 @@ name = "solana-mev-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ethnum",
  "futures",
  "hex",
  "lazy_static",

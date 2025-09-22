@@ -26,6 +26,7 @@ strip = "debuginfo"
 
 [dependencies]
 anyhow = "1.0.99"
+ethnum = "1.5.2"
 futures = "0.3.31"
 hex = "0.4.3"
 lazy_static = "1.5.0"
