@@ -57,6 +57,8 @@ async fn main() -> Result<()> {
 
     let mut graph = graph::Graph::build_graph()?;
 
+    let _ = graph.build_cycles(0, 4)?;
+
     //https://api.mainnet-beta.solana.com
     //https://api.devnet.solana.com
     let client = Arc::new(RpcClient::new_with_commitment(
@@ -115,23 +117,8 @@ async fn main() -> Result<()> {
         "Average Duration per Chunk: {:?}",
         duration.div_f32(number_of_chunks as f32)
     );
-    let edge = graph.get_edge(0).unwrap();
-    info!("Sqrt Price: {:?}", edge.sqrt_price.unwrap());
-    info!("Reversed? {:?}", edge.reversed);
-    info!("Exchange Rate on address: {:?} is {:?}", edge.address, edge.get_exchange_rate(true));
 
-    let _ = graph.detect_cycles(4)?;
+    let _ = graph.find_arbitrage_cycles()?;
 
-    // for cycle in cycles {
-
-    //     let fist = cycle[0];
-
-    //     for elem in cycle {
-    //         print!("{:?} -> ", graph.nodes[elem].symbol)
-    //     }
-    //     // println!("{:?}");
-    //     println!("{:?}", graph.nodes[fist].symbol);
-    // }
-    
     Ok(())
 }

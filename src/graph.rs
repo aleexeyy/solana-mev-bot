@@ -1,6 +1,8 @@
-use core::num;
 use std::{
-    cmp::min, collections::{HashMap, HashSet}, f32::NEG_INFINITY, fs::{read_dir, read_to_string}, str::FromStr
+    collections::{HashMap, HashSet},
+    fs::{read_dir, read_to_string},
+    str::FromStr,
+    time::Instant,
 };
 
 use solana_sdk::pubkey::Pubkey;
@@ -9,7 +11,7 @@ use tracing::{info, warn};
 use crate::bootstrap::pool_schema::{
     DexType, PoolInfo, PoolType, PoolUpdate, StoredPools, TokenInfo,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Result, anyhow};
 use ethnum::U256;
 
 #[allow(dead_code)]
@@ -47,7 +49,7 @@ pub struct Edge {
 
 impl Edge {
     pub fn get_log_exchange_rate(&self, direct: bool) -> f64 {
-        -self.get_exchange_rate(direct).log10()
+        self.get_exchange_rate(direct).log10()
     }
 
     pub fn get_exchange_rate(&self, direct: bool) -> f64 {
@@ -70,23 +72,21 @@ impl Edge {
         let exchange_rate = price_f64 * denominator;
 
         if self.reversed == direct {
-            1.0 / exchange_rate    
+            1.0 / exchange_rate
         } else {
             exchange_rate
         }
     }
 
-
     fn get_other_node(&self, this_token: usize) -> Option<usize> {
         if this_token == self.node_lowest {
-            return Some(self.node_highest);
+            Some(self.node_highest)
         } else if this_token == self.node_highest {
-            return Some(self.node_lowest);
+            Some(self.node_lowest)
         } else {
-            return None;
+            None
         }
     }
-
 }
 
 #[derive(Debug, Default)]
@@ -96,6 +96,8 @@ pub struct Graph {
     adjacency: HashMap<usize, HashSet<usize>>, // adjacent pools to the token
     pub edges: Vec<Edge>,
     address_to_edge: HashMap<Pubkey, usize>,
+
+    all_cycles: HashSet<Vec<usize>>,
     // nodes_to_edges: HashMap<(usize, usize), HashSet<usize>>,
 }
 
@@ -107,16 +109,13 @@ impl Graph {
             address_to_node: HashMap::new(),
             address_to_edge: HashMap::new(),
             adjacency: HashMap::new(),
+            all_cycles: HashSet::new(),
             // nodes_to_edges: HashMap::new(),
         }
     }
 }
 
 impl Graph {
-
-    pub fn get_edge(&self, index: usize) -> Result<&Edge> {
-        self.edges.get(index).context("Wrong Index")
-    }
     fn insert_node(&mut self, token: TokenInfo) -> Result<usize> {
         let token_address = Pubkey::from_str(&token.address.unwrap())?;
 
@@ -144,12 +143,24 @@ impl Graph {
         node0_index: usize,
         node1_index: usize,
     ) -> Result<usize> {
-
-        let (token_vault_lowest, token_vault_highest, idx_lowest, idx_highest, reversed) = if node0_index < node1_index {
-            (pool.token_vault_a.unwrap(), pool.token_vault_b.unwrap(), node0_index, node1_index, false)
-        } else {
-            (pool.token_vault_b.unwrap(), pool.token_vault_a.unwrap(), node1_index, node0_index, true)
-        };
+        let (token_vault_lowest, token_vault_highest, idx_lowest, idx_highest, reversed) =
+            if node0_index < node1_index {
+                (
+                    pool.token_vault_a.unwrap(),
+                    pool.token_vault_b.unwrap(),
+                    node0_index,
+                    node1_index,
+                    false,
+                )
+            } else {
+                (
+                    pool.token_vault_b.unwrap(),
+                    pool.token_vault_a.unwrap(),
+                    node1_index,
+                    node0_index,
+                    true,
+                )
+            };
         let address = Pubkey::from_str(&pool.address.unwrap())?;
         let edge = Edge {
             address,
@@ -228,160 +239,194 @@ impl Graph {
     }
 
 
-    pub fn detect_cycles(&self, max_length: usize) -> Result<()> {
-        let mut all_cycles: HashSet<Vec<usize>> = HashSet::new();
+    pub fn find_arbitrage_cycles(&self) -> Result<()> {
+        for cycle in &self.all_cycles {
+            // Forward direction
+            let forward_log_sum: f64 = cycle
+                .iter()
+                .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(true))
+                .sum();
 
-        let number_of_nodes = self.nodes.len();
+            // Reverse direction
+            let backward_log_sum: f64 = cycle
+                .iter()
+                .rev()
+                .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(false))
+                .sum();
 
-        for i in 0..number_of_nodes {
-            self.dfs_search(i, i, vec![i], max_length).into_iter().for_each(|x: Vec<usize>| {
-                if !x.is_empty() {
-                    all_cycles.insert(x);
-                }
-            });
-        }
-        // info!("Detected Cycles: {:?}", all_cycles);
-        info!("Number of Cycles: {:?}", all_cycles.len());
-
-        all_cycles.iter().for_each(move |cycle| {
-            if cycle.len() == 2 {
-                info!("Cycle: {:?}", cycle);
+            // Check for arbitrage
+            if forward_log_sum > 0.0 {
+                println!("Arbitrage opportunity (forward): {:?} | with sum: {:?}", cycle, forward_log_sum);
             }
-        });
+            if backward_log_sum > 0.0 {
+                println!("Arbitrage opportunity (backward): {:?} | with sum: {:?}", cycle, backward_log_sum);
+            }
+        }
+
         Ok(())
     }
 
 
-
-    fn dfs_search(&self, start_node: usize, current_node: usize, mut visited_edges: Vec<usize>, max_depth: usize) -> HashSet<Vec<usize>>{
+    pub fn build_cycles(&mut self, start_node: usize, max_depth: usize) -> Result<()> {
+        let start = Instant::now();
+        let mut visited_edges: Vec<bool> = vec![false; self.edges.len()]; // bitmap
+        let mut path: Vec<usize> = Vec::with_capacity(max_depth);
         let mut cycles: HashSet<Vec<usize>> = HashSet::new();
-        if visited_edges.len() >= max_depth {
-            return cycles;
-        }
-        for neighbour_edge in self.adjacency.get(&current_node).unwrap() {
+        let wsol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
 
-            if visited_edges.contains(neighbour_edge) { continue; }
+        self.dfs_recursive(
+            start_node,
+            start_node,
+            &mut visited_edges,
+            &mut path,
+            max_depth,
+            &mut cycles,
+            wsol,
+        );
 
-            let other_node = self.edges.get(*neighbour_edge).unwrap().get_other_node(current_node).unwrap();
+        self.all_cycles = cycles;
 
-
-            visited_edges.push(*neighbour_edge);
-
-            if other_node == start_node && visited_edges.len() >= 1 && visited_edges.len() <= max_depth {
-                cycles.insert(Self::canonicalize(visited_edges.clone()));
-            }
-
-            self.dfs_search(start_node, other_node, visited_edges.clone(), max_depth).into_iter().for_each(|x: Vec<usize>| {
-                if !x.is_empty() {
-                    cycles.insert(x);
-                }
-            });
-
-            visited_edges.pop();
-
-
-
-        }
-        return cycles;
+        info!("Number of Cycles: {:?}", &self.all_cycles.len());
+        let duration = start.elapsed();
+        info!("Cycles Building Took: {:?}", duration);
+        Ok(())
     }
 
-
-    fn canonicalize(mut cycle: Vec<usize>) -> Vec<usize> {
-        if cycle.is_empty() {
-            return cycle;
+    fn dfs_recursive(
+        &self,
+        start_node: usize,
+        current_node: usize,
+        visited_edges: &mut Vec<bool>,
+        path: &mut Vec<usize>,
+        max_depth: usize,
+        cycles: &mut HashSet<Vec<usize>>,
+        wsol: Pubkey,
+    ) {
+        if path.len() >= max_depth {
+            return;
         }
 
-        let min_value_index = cycle
+        for &edge_index in &self.adjacency[&current_node] {
+            if visited_edges[edge_index] {
+                continue;
+            }
+
+            let edge = &self.edges[edge_index];
+            let other_node = edge.get_other_node(current_node).unwrap();
+
+            visited_edges[edge_index] = true;
+            path.push(edge_index);
+
+            if other_node == start_node && path.len() >= 2 {
+                let mut canonical = Self::canonicalize(path.as_ref());
+
+                if let Some(pos) = canonical.iter().position(|&pool_index| {
+                    let edge = &self.edges[pool_index];
+                    let node_a = &self.nodes[edge.node_lowest];
+                    let node_b = &self.nodes[edge.node_highest];
+                    node_a.address == wsol || node_b.address == wsol
+                }) {
+                    canonical.rotate_left(pos);
+                }
+                cycles.insert(canonical);
+            }
+
+            self.dfs_recursive(
+                start_node,
+                other_node,
+                visited_edges,
+                path,
+                max_depth,
+                cycles,
+                wsol,
+            );
+
+            path.pop();
+            visited_edges[edge_index] = false;
+        }
+    }
+
+    #[inline]
+    fn canonicalize(cycle: &[usize]) -> Vec<usize> {
+        let n = cycle.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        let (min_idx, _) = cycle
             .iter()
             .enumerate()
             .min_by_key(|&(_, val)| val)
-            .map(|(i, _)| i)
             .unwrap();
 
-        cycle.rotate_left(min_value_index);
-        cycle
+        let forward: Vec<usize> = (0..n).map(|i| cycle[(min_idx + i) % n]).collect();
+
+        let mut reversed: Vec<usize> = cycle.iter().rev().cloned().collect();
+        let (rev_min_idx, _) = reversed
+            .iter()
+            .enumerate()
+            .min_by_key(|&(_, val)| val)
+            .unwrap();
+        reversed.rotate_left(rev_min_idx);
+
+        if forward < reversed {
+            forward
+        } else {
+            reversed
+        }
     }
-
-    // pub fn detect_cycles(&self, max_length: usize) -> Result<Vec<Vec<usize>>> {
-    //     let number_of_nodes = self.nodes.len();
-    //     let mut dist = vec![f64::INFINITY; number_of_nodes];
-    //     let mut parent: Vec<Option<usize>> =  vec![None; number_of_nodes];
-    //     dist[0] = 0.0;
-
-    //     for _ in 0..(number_of_nodes-1) {
-    //         for edge in &self.edges {
-    //             if dist[edge.node_highest] != f64::INFINITY && dist[edge.node_lowest] > dist[edge.node_highest] + edge.get_log_exchange_rate(false) {
-    //                 dist[edge.node_lowest] = dist[edge.node_highest] + edge.get_log_exchange_rate(false);
-    //                 parent[edge.node_lowest] = Some(edge.node_highest);
-    //             }
-
-    //             if dist[edge.node_lowest] != f64::INFINITY && dist[edge.node_highest] > dist[edge.node_lowest] + edge.get_log_exchange_rate(true) {
-    //                 dist[edge.node_highest] = dist[edge.node_lowest] + edge.get_log_exchange_rate(true);
-    //                 parent[edge.node_highest] = Some(edge.node_lowest);
-    //             }
-
-    //         }
-
-    //     }
-
-    //     let mut cycles: Vec<Vec<usize>> = vec![];
-
-
-    //     for edge in &self.edges {
-    //         if  dist[edge.node_highest] != f64::INFINITY && dist[edge.node_lowest] > dist[edge.node_highest] + edge.get_log_exchange_rate(false) {
-    //             info!("Detected Negative Cycle");
-    //             dist[edge.node_lowest] = dist[edge.node_highest] + edge.get_log_exchange_rate(false);
-    //             parent[edge.node_lowest] = Some(edge.node_highest);
-
-    //             let mut x = edge.node_lowest;
-    //             for _ in 0..number_of_nodes {x = parent[x].unwrap()}
-
-    //             let mut cycle = vec![x];
-    //             let mut y = parent[x].unwrap();
-    //             let mut cycle_length = 1;
-    //             while y != x {
-    //                 if cycle_length > max_length { break; }
-    //                 cycle.push(y);
-    //                 cycle_length += 1;
-    //                 y = parent[y].unwrap();
-    //             }
-    //             if cycle_length <= max_length {
-    //                 cycle.sort();
-    //                 cycles.push(cycle);
-    //             }
-    //         }
-
-    //         if dist[edge.node_lowest] != f64::INFINITY && dist[edge.node_highest] > dist[edge.node_lowest] + edge.get_log_exchange_rate(true) {
-    //             info!("Detected Negative Cycle");
-    //             dist[edge.node_highest] = dist[edge.node_lowest] + edge.get_log_exchange_rate(true);
-    //             parent[edge.node_highest] = Some(edge.node_lowest);
-
-    //             let mut x = edge.node_highest;
-    //             for _ in 0..number_of_nodes {x = parent[x].unwrap()}
-
-    //             let mut cycle = vec![x];
-    //             let mut y = parent[x].unwrap();
-    //             let mut cycle_length = 1;
-    //             while y != x {
-    //                 if cycle_length > max_length { break; }
-    //                 cycle.push(y);
-    //                 cycle_length += 1;
-    //                 y = parent[y].unwrap();
-    //             }
-    //             if cycle_length <= max_length {
-    //                 cycle.sort();
-    //                 cycles.push(cycle);
-    //             }
-    //         }
-
-    //     }
-    //     Ok(cycles)
-    // }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
+
+    #[test]
+    fn test_graph_canonicalize_normal() {
+        let cycle: Vec<usize> = vec![123, 321, 0, 222];
+
+        let result = Graph::canonicalize(cycle.as_ref());
+
+        assert_eq!(result, vec![0, 222, 123, 321]);
+    }
+
+    #[test]
+    fn test_graph_canonicalize_with_no_needed_actions() {
+        let cycle: Vec<usize> = vec![0, 222, 123, 321];
+
+        let result = Graph::canonicalize(cycle.as_ref());
+
+        assert_eq!(result, vec![0, 222, 123, 321]);
+    }
+
+    #[test]
+    fn test_graph_canonicalize_with_orientation_normalization() {
+        let cycle: Vec<usize> = vec![321, 123, 222, 0];
+
+        let result = Graph::canonicalize(cycle.as_ref());
+
+        assert_eq!(result, vec![0, 222, 123, 321]);
+    }
+
+    #[test]
+    fn test_graph_canonicalize_with_orientation_normalization2() {
+        let cycle: Vec<usize> = vec![222, 123, 321, 0];
+
+        let result = Graph::canonicalize(cycle.as_ref());
+
+        assert_eq!(result, vec![0, 222, 123, 321]);
+    }
+
+    #[test]
+    fn test_graph_canonicalize_with_() {
+        let cycle: Vec<usize> = vec![321, 123, 222, 0];
+
+        let result = Graph::canonicalize(cycle.as_ref());
+
+        assert_eq!(result, vec![0, 222, 123, 321]);
+    }
 
     #[test]
     fn test_insert_node_with_invalid_address_returns_error() {
