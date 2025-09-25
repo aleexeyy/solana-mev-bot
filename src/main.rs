@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
 
     let mut graph = graph::Graph::build_graph()?;
 
-    let _ = graph.build_cycles(0, 4)?;
+    let _ = graph.build_cycles(4)?;
 
     //https://api.mainnet-beta.solana.com
     //https://api.devnet.solana.com

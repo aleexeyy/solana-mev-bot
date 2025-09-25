@@ -15,9 +15,6 @@ use anyhow::{Result, anyhow};
 use ethnum::U256;
 
 
-//true - forward(token0 -> token1), false - backward(token1 -> token0)
-type PathStep = (usize, bool);
-
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node {
@@ -105,11 +102,16 @@ impl Edge {
 
 #[derive(Debug, Default)]
 pub struct Graph {
+
+    wsol_address: Pubkey,
+    wsol_node: usize,
+
     pub nodes: Vec<Node>,
-    address_to_node: HashMap<Pubkey, usize>,
-    adjacency: HashMap<usize, HashSet<usize>>, // adjacent pools to the token
     pub edges: Vec<Edge>,
+
+    address_to_node: HashMap<Pubkey, usize>,
     address_to_edge: HashMap<Pubkey, usize>,
+    adjacency: HashMap<usize, HashSet<usize>>, // adjacent pools to the token
 
     all_cycles: HashSet<Vec<usize>>,
     // nodes_to_edges: HashMap<(usize, usize), HashSet<usize>>,
@@ -118,11 +120,16 @@ pub struct Graph {
 impl Graph {
     fn default() -> Self {
         Graph {
+            wsol_address: Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(),
+            wsol_node: usize::MAX,
+
             nodes: vec![],
             edges: vec![],
+
             address_to_node: HashMap::new(),
             address_to_edge: HashMap::new(),
             adjacency: HashMap::new(),
+
             all_cycles: HashSet::new(),
             // nodes_to_edges: HashMap::new(),
         }
@@ -131,6 +138,7 @@ impl Graph {
 
 impl Graph {
     fn insert_node(&mut self, token: TokenInfo) -> Result<usize> {
+
         let token_address = Pubkey::from_str(&token.address.unwrap())?;
 
         if let Some(&existing_index) = self.address_to_node.get(&token_address) {
@@ -144,6 +152,11 @@ impl Graph {
             symbol: token.symbol.unwrap_or("Empty Symbol".to_string()),
         };
         let index = self.nodes.len();
+
+        if token_address == self.wsol_address {
+            self.wsol_node = index;
+        }
+
         self.nodes.push(node);
         self.address_to_node.insert(token_address, index);
         self.adjacency.insert(index, HashSet::new());
@@ -281,12 +294,13 @@ impl Graph {
     // }
 
 
-    pub fn build_cycles(&mut self, start_node: usize, max_depth: usize) -> Result<()> {
+    pub fn build_cycles(&mut self, max_depth: usize) -> Result<()> {
         let start = Instant::now();
+
+        let start_node = self.wsol_node;
         let mut visited_edges: Vec<bool> = vec![false; self.edges.len()]; // bitmap
         let mut path: Vec<usize> = Vec::with_capacity(max_depth);
         let mut cycles: HashSet<Vec<usize>> = HashSet::new();
-        let wsol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
 
         self.dfs_recursive(
             start_node,
@@ -295,30 +309,15 @@ impl Graph {
             &mut path,
             max_depth,
             &mut cycles,
-            wsol,
+            self.wsol_address,
         );
 
         let mut all_cycles: HashSet<Vec<usize>> = HashSet::new();
         let mut wrong_cycle_counter: usize = 0;
 
 
-        // let test_cycle: Vec<usize> = vec![547, 872, 579, 488];
-        // let mut cycle = cycles.get(&test_cycle).unwrap().to_owned();
-
-        // let need_change = self.check_cycle(cycle.as_mut());
-
-        // println!("Need Change? {:?}", need_change);
-
-        // panic!("Testing");
-
-        for (index, mut cycle) in cycles.into_iter().enumerate() {
+        for mut cycle in cycles {
             let need_change = self.check_cycle(cycle.as_mut());
-            
-            // let need_change_2 = self.check_cycle(cycle.as_mut());
-
-            // if need_change && need_change_2 {
-            //     println!("Double Wrong Cycle: {:?}", &cycle);
-            // }
 
             all_cycles.insert(cycle);
             if need_change {
@@ -330,7 +329,6 @@ impl Graph {
         info!("Number of Wrong Cycles: {:?}", wrong_cycle_counter);
 
         // wrong_cycle_counter = 0;
-
         // for (index, mut cycle) in all_cycles.into_iter().enumerate() {
         //     let need_change = self.check_cycle(cycle.as_mut());
         //     // all_cycles.insert(cycle);
@@ -341,8 +339,6 @@ impl Graph {
         //             println!("Pool: {:?}", self.edges[pool].address);
         //         }
         //     }
-
-
         // }
 
         self.all_cycles = all_cycles;
@@ -358,8 +354,9 @@ impl Graph {
     fn check_cycle(&self, cycle: &mut Vec<usize>) -> bool {
         let cycle_len = cycle.len();
         let mut need_change = false;
-        let mut last_node: usize = 0; // WSOL
+        let mut last_node: usize = self.wsol_node; // WSOL
         let mut problematic_edge_index: usize = cycle_len; // set to unreal index
+
         for (index, pool) in cycle.iter().enumerate() {
             let edge = &self.edges[*pool];
             match edge.get_other_node(last_node) {
