@@ -89,6 +89,7 @@ impl Edge {
         }
     }
 
+    #[allow(dead_code)]
     fn get_swap_direction(&self, token_in: usize) -> Option<bool> {
         if self.node_lowest == token_in {
             return Some(!self.reversed);
@@ -113,7 +114,7 @@ pub struct Graph {
     address_to_edge: HashMap<Pubkey, usize>,
     adjacency: HashMap<usize, HashSet<usize>>, // adjacent pools to the token
 
-    all_cycles: HashSet<Vec<usize>>,
+    pub all_cycles: HashSet<Vec<usize>>,
     // nodes_to_edges: HashMap<(usize, usize), HashSet<usize>>,
 }
 
@@ -239,9 +240,9 @@ impl Graph {
         Err(anyhow!("Edge with address {} doesn't exist", address))
     }
 
-    pub fn build_graph() -> Result<Self> {
+    pub fn build_graph(data_folder_path: &str) -> Result<Self> {
         let pool_files = Vec::from_iter(
-            read_dir("./cached-blockchain-data")?
+            read_dir(data_folder_path)?
                 .filter_map(Result::ok)
                 .map(|e| e.path())
                 .filter(|p| p.extension().and_then(|ext| ext.to_str()) == Some("json")),
@@ -351,7 +352,7 @@ impl Graph {
         Ok(())
     }
 
-    fn check_cycle(&self, cycle: &mut Vec<usize>) -> bool {
+    pub fn check_cycle(&self, cycle: &mut Vec<usize>) -> bool {
         let cycle_len = cycle.len();
         let mut need_change = false;
         let mut last_node: usize = self.wsol_node; // WSOL
@@ -474,8 +475,9 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use std::vec;
-
     use super::*;
+
+
 
    #[test]
     fn test_canonicalize_empty_cycle() {
@@ -568,6 +570,7 @@ mod tests {
     #[test]
     fn test_insert_node_add_two_nodes_returns_indexes() {
         let mut graph = Graph::default();
+        let wsol_address = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
         let result_1 = graph.insert_node(TokenInfo {
             address: Some("Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE".to_string()),
             decimals: Some(18),
@@ -582,6 +585,7 @@ mod tests {
             symbol: Some("Test Symbol".to_string()),
         });
 
+        assert_eq!(graph.wsol_address, wsol_address);
         assert_eq!(graph.nodes.len(), 2);
         assert_eq!(result_1.unwrap(), 0);
         assert_eq!(result_2.unwrap(), 1);
@@ -665,6 +669,7 @@ mod tests {
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(graph.address_to_edge.len(), 1);
         assert_eq!(graph.address_to_node.len(), 2);
+        assert_eq!(graph.wsol_node, 0);
     }
 
     #[test]

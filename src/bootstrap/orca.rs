@@ -46,8 +46,8 @@ struct Cursor {
     _previous: Option<String>,
 }
 
-pub async fn fetch_pools() -> Result<HashSet<TokenInfo>> {
-    let file = File::create("./cached-blockchain-data/orca_pools.json")
+pub async fn fetch_pools(data_folder_path: &str, is_test: bool) -> Result<HashSet<TokenInfo>> {
+    let file = File::create(format!("{}/orca_pools.json", data_folder_path))
         .await
         .context("Failed to create Orca pools output file")?;
     let mut writer = BufWriter::new(file);
@@ -63,8 +63,13 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>> {
             .context("Invalid Orca API URL")?;
     let mut tokens = HashSet::new();
 
-    // Up to 2000 pools (10 pages × 200 per page)
-    for _ in 0..10 {
+    let max_iterations: usize = match is_test {
+        true => 1,
+        false => 10, // change for production
+    };
+
+    // 50 per page
+    for _ in 0..max_iterations {
         let response = client
             .get(url.clone())
             .send()

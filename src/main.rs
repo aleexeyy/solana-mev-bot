@@ -1,23 +1,23 @@
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_mev_bot::{bootstrap, decoders, graph};
 use solana_sdk::{account::Account, pubkey::Pubkey};
-mod bootstrap;
 use std::env;
 use std::{
     fs::{read_dir, read_to_string},
     sync::Arc,
     time::Instant,
 };
-mod graph;
 use futures::future::join_all;
 use tracing::{info, warn};
-mod decoders;
 
-fn load_pools() -> anyhow::Result<Vec<Pubkey>> {
+
+
+fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
     // want all files with a .json extension
     let pool_files = Vec::from_iter(
-        read_dir("./cached-blockchain-data")?
+        read_dir(data_folder_path)?
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|ext| ext.to_str()) == Some("json")),
@@ -44,18 +44,19 @@ fn load_pools() -> anyhow::Result<Vec<Pubkey>> {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-
     let args: Vec<String> = env::args().collect();
+
+    const DATA_FOLDER: &str = "./cached-blockchain-data";
 
     if args.contains(&"setup".to_string()) {
         let start = Instant::now();
         //update cached pools data
-        let _ = bootstrap::update_all().await;
+        let _ = bootstrap::update_all(DATA_FOLDER, false).await;
         let duration = start.elapsed();
         println!("Bootstrap took: {:?}", duration);
     }
 
-    let mut graph = graph::Graph::build_graph()?;
+    let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
 
     let _ = graph.build_cycles(4)?;
 
@@ -66,7 +67,7 @@ async fn main() -> Result<()> {
         CommitmentConfig::confirmed(),
     ));
 
-    let addresses = load_pools().unwrap();
+    let addresses = load_pools(DATA_FOLDER).unwrap();
     info!("Amount of Addresses: {:?}", addresses.len());
 
     let chunks: Vec<Vec<Pubkey>> = addresses.chunks(100).map(|c| c.to_vec()).collect();

@@ -54,8 +54,8 @@ struct RaydiumResponse {
     data: RaydiumData,
 }
 
-pub async fn fetch_pools() -> Result<HashSet<TokenInfo>> {
-    let file = File::create("./cached-blockchain-data/raydium_pools.json")
+pub async fn fetch_pools(data_folder_path: &str, is_test: bool) -> Result<HashSet<TokenInfo>> {
+    let file = File::create(format!("{}/raydium_pools.json", data_folder_path))
         .await
         .context("Failed to create output file")?;
     let mut writer = BufWriter::new(file);
@@ -72,7 +72,13 @@ pub async fn fetch_pools() -> Result<HashSet<TokenInfo>> {
     let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
     let mut tokens = HashSet::new();
 
-    for _ in 0..5 {
+    let max_iterations: usize = match is_test {
+        true => 1,
+        false => 5, // change for production
+    };
+
+    //100 per page
+    for _ in 0..max_iterations {
         let response = client
             .get(url.clone())
             .send()
