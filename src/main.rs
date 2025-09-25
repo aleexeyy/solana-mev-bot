@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
         duration.div_f32(number_of_chunks as f32)
     );
 
-    let _ = graph.find_arbitrage_cycles()?;
+    // let _ = graph.find_arbitrage_cycles()?;
 
     Ok(())
 }

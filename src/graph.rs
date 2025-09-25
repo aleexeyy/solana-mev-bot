@@ -14,6 +14,10 @@ use crate::bootstrap::pool_schema::{
 use anyhow::{Result, anyhow};
 use ethnum::U256;
 
+
+//true - forward(token0 -> token1), false - backward(token1 -> token0)
+type PathStep = (usize, bool);
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node {
@@ -86,6 +90,16 @@ impl Edge {
         } else {
             None
         }
+    }
+
+    fn get_swap_direction(&self, token_in: usize) -> Option<bool> {
+        if self.node_lowest == token_in {
+            return Some(!self.reversed);
+        } else if self.node_highest == token_in {
+            return Some(self.reversed);
+        }
+
+        None
     }
 }
 
@@ -239,32 +253,32 @@ impl Graph {
     }
 
 
-    pub fn find_arbitrage_cycles(&self) -> Result<()> {
-        for cycle in &self.all_cycles {
-            // Forward direction
-            let forward_log_sum: f64 = cycle
-                .iter()
-                .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(true))
-                .sum();
+    // pub fn find_arbitrage_cycles(&self) -> Result<()> {
+    //     for cycle in &self.all_cycles {
+    //         // Forward direction
+    //         let forward_log_sum: f64 = cycle
+    //             .iter()
+    //             .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(true))
+    //             .sum();
 
-            // Reverse direction
-            let backward_log_sum: f64 = cycle
-                .iter()
-                .rev()
-                .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(false))
-                .sum();
+    //         // Reverse direction
+    //         let backward_log_sum: f64 = cycle
+    //             .iter()
+    //             .rev()
+    //             .map(|&edge_index| self.edges[edge_index].get_log_exchange_rate(false))
+    //             .sum();
 
-            // Check for arbitrage
-            if forward_log_sum > 0.0 {
-                println!("Arbitrage opportunity (forward): {:?} | with sum: {:?}", cycle, forward_log_sum);
-            }
-            if backward_log_sum > 0.0 {
-                println!("Arbitrage opportunity (backward): {:?} | with sum: {:?}", cycle, backward_log_sum);
-            }
-        }
+    //         // Check for arbitrage
+    //         if forward_log_sum > 0.0 {
+    //             println!("Arbitrage opportunity (forward): {:?} | with sum: {:?}", cycle, forward_log_sum);
+    //         }
+    //         if backward_log_sum > 0.0 {
+    //             println!("Arbitrage opportunity (backward): {:?} | with sum: {:?}", cycle, backward_log_sum);
+    //         }
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
 
     pub fn build_cycles(&mut self, start_node: usize, max_depth: usize) -> Result<()> {
@@ -284,12 +298,95 @@ impl Graph {
             wsol,
         );
 
-        self.all_cycles = cycles;
+        let mut all_cycles: HashSet<Vec<usize>> = HashSet::new();
+        let mut wrong_cycle_counter: usize = 0;
 
-        info!("Number of Cycles: {:?}", &self.all_cycles.len());
+
+        // let test_cycle: Vec<usize> = vec![547, 872, 579, 488];
+        // let mut cycle = cycles.get(&test_cycle).unwrap().to_owned();
+
+        // let need_change = self.check_cycle(cycle.as_mut());
+
+        // println!("Need Change? {:?}", need_change);
+
+        // panic!("Testing");
+
+        for (index, mut cycle) in cycles.into_iter().enumerate() {
+            let need_change = self.check_cycle(cycle.as_mut());
+            
+            // let need_change_2 = self.check_cycle(cycle.as_mut());
+
+            // if need_change && need_change_2 {
+            //     println!("Double Wrong Cycle: {:?}", &cycle);
+            // }
+
+            all_cycles.insert(cycle);
+            if need_change {
+                wrong_cycle_counter += 1;
+            }
+        }
+
+        info!("Number of Cycles: {:?}", &all_cycles.len());
+        info!("Number of Wrong Cycles: {:?}", wrong_cycle_counter);
+
+        // wrong_cycle_counter = 0;
+
+        // for (index, mut cycle) in all_cycles.into_iter().enumerate() {
+        //     let need_change = self.check_cycle(cycle.as_mut());
+        //     // all_cycles.insert(cycle);
+        //     if need_change {
+        //         wrong_cycle_counter += 1;
+        //         println!("Cycle {:?} is Wrong", index);
+        //         for pool in cycle {
+        //             println!("Pool: {:?}", self.edges[pool].address);
+        //         }
+        //     }
+
+
+        // }
+
+        self.all_cycles = all_cycles;
+
+        // info!("Number of Wrong Cycles After Fix: {:?}", wrong_cycle_counter);
         let duration = start.elapsed();
         info!("Cycles Building Took: {:?}", duration);
+
+
         Ok(())
+    }
+
+    fn check_cycle(&self, cycle: &mut Vec<usize>) -> bool {
+        let cycle_len = cycle.len();
+        let mut need_change = false;
+        let mut last_node: usize = 0; // WSOL
+        let mut problematic_edge_index: usize = cycle_len; // set to unreal index
+        for (index, pool) in cycle.iter().enumerate() {
+            let edge = &self.edges[*pool];
+            match edge.get_other_node(last_node) {
+                Some(other_node) => last_node = other_node,
+                None => { need_change = true; problematic_edge_index = index; break; },
+            }
+
+        }
+        if !need_change && last_node != 0 {
+            problematic_edge_index = cycle_len-1;
+            need_change = true;
+            println!("Last Edge Was Wrong");
+        }
+        
+        if need_change {
+            // info!(%problematic_edge_index, "Wrong Edge Index");
+            // println!("Cycle before rotation: {:?}", &cycle);
+            if problematic_edge_index < cycle_len && problematic_edge_index > 0 {
+                cycle.rotate_left(1);
+            } else if problematic_edge_index == 0 {
+                cycle.rotate_left(cycle_len-1);
+            }
+            // println!("Cycle after rotation: {:?}", &cycle);
+        }
+
+
+        need_change
     }
 
     fn dfs_recursive(
@@ -315,13 +412,14 @@ impl Graph {
             let other_node = edge.get_other_node(current_node).unwrap();
 
             visited_edges[edge_index] = true;
+
             path.push(edge_index);
 
             if other_node == start_node && path.len() >= 2 {
                 let mut canonical = Self::canonicalize(path.as_ref());
 
-                if let Some(pos) = canonical.iter().position(|&pool_index| {
-                    let edge = &self.edges[pool_index];
+                if let Some(pos) = canonical.iter().position(|pool_index| {
+                    let edge = &self.edges[*pool_index];
                     let node_a = &self.nodes[edge.node_lowest];
                     let node_b = &self.nodes[edge.node_highest];
                     node_a.address == wsol || node_b.address == wsol
@@ -349,32 +447,31 @@ impl Graph {
     #[inline]
     fn canonicalize(cycle: &[usize]) -> Vec<usize> {
         let n = cycle.len();
-        if n == 0 {
-            return Vec::new();
-        }
+        if n == 0 { return Vec::new(); }
 
         let (min_idx, _) = cycle
             .iter()
             .enumerate()
-            .min_by_key(|&(_, val)| val)
+            .min_by_key(|&(_, edge_idx)| edge_idx)
             .unwrap();
 
         let forward: Vec<usize> = (0..n).map(|i| cycle[(min_idx + i) % n]).collect();
 
-        let mut reversed: Vec<usize> = cycle.iter().rev().cloned().collect();
+        let mut reversed: Vec<usize> = cycle.iter()
+            .rev()
+            .map(|&edge| edge)
+            .collect();
+
         let (rev_min_idx, _) = reversed
             .iter()
             .enumerate()
-            .min_by_key(|&(_, val)| val)
+            .min_by_key(|&(_, edge_idx)| edge_idx)
             .unwrap();
         reversed.rotate_left(rev_min_idx);
 
-        if forward < reversed {
-            forward
-        } else {
-            reversed
-        }
+        if forward <= reversed { forward } else { reversed }
     }
+
 }
 
 #[cfg(test)]
@@ -383,49 +480,54 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_graph_canonicalize_normal() {
-        let cycle: Vec<usize> = vec![123, 321, 0, 222];
-
-        let result = Graph::canonicalize(cycle.as_ref());
-
-        assert_eq!(result, vec![0, 222, 123, 321]);
+   #[test]
+    fn test_canonicalize_empty_cycle() {
+        let cycle: Vec<usize> = vec![];
+        let result = Graph::canonicalize(&cycle);
+        assert!(result.is_empty());
     }
 
     #[test]
-    fn test_graph_canonicalize_with_no_needed_actions() {
-        let cycle: Vec<usize> = vec![0, 222, 123, 321];
-
-        let result = Graph::canonicalize(cycle.as_ref());
-
-        assert_eq!(result, vec![0, 222, 123, 321]);
+    fn test_canonicalize_single_step() {
+        let cycle = vec![42];
+        let result = Graph::canonicalize(&cycle);
+        assert_eq!(result, vec![42]);
     }
 
     #[test]
-    fn test_graph_canonicalize_with_orientation_normalization() {
-        let cycle: Vec<usize> = vec![321, 123, 222, 0];
-
-        let result = Graph::canonicalize(cycle.as_ref());
-
-        assert_eq!(result, vec![0, 222, 123, 321]);
+    fn test_canonicalize_two_steps_forward() {
+        let cycle = vec![10, 20];
+        let result = Graph::canonicalize(&cycle);
+        assert_eq!(result, cycle);
     }
 
     #[test]
-    fn test_graph_canonicalize_with_orientation_normalization2() {
-        let cycle: Vec<usize> = vec![222, 123, 321, 0];
-
-        let result = Graph::canonicalize(cycle.as_ref());
-
-        assert_eq!(result, vec![0, 222, 123, 321]);
+    fn test_canonicalize_two_steps_reverse_orientation() {
+        let cycle = vec![20, 10];
+        let result = Graph::canonicalize(&cycle);
+        assert_eq!(result, vec![10, 20]);
     }
 
     #[test]
-    fn test_graph_canonicalize_with_() {
-        let cycle: Vec<usize> = vec![321, 123, 222, 0];
+    fn test_canonicalize_rotated_cycle() {
+        let cycle = vec![123, 321, 0, 222];
+        let rotated = vec![321, 0, 222, 123];
 
-        let result = Graph::canonicalize(cycle.as_ref());
+        let result = Graph::canonicalize(&cycle);
+        let rotated_result = Graph::canonicalize(&rotated);
 
-        assert_eq!(result, vec![0, 222, 123, 321]);
+        assert_eq!(result, rotated_result);
+    }
+
+    #[test]
+    fn test_canonicalize_reversed_cycle() {
+        let cycle = vec![123, 321, 0, 222];
+        let reversed = vec![222, 0, 321, 123];
+
+        let result = Graph::canonicalize(&cycle);
+        let reversed_result = Graph::canonicalize(&reversed);
+
+        assert_eq!(result, reversed_result);
     }
 
     #[test]
