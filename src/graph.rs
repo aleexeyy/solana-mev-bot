@@ -14,7 +14,6 @@ use crate::bootstrap::pool_schema::{
 use anyhow::{Result, anyhow};
 use ethnum::U256;
 
-
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node {
@@ -103,7 +102,6 @@ impl Edge {
 
 #[derive(Debug, Default)]
 pub struct Graph {
-
     wsol_address: Pubkey,
     wsol_node: usize,
 
@@ -139,7 +137,6 @@ impl Graph {
 
 impl Graph {
     fn insert_node(&mut self, token: TokenInfo) -> Result<usize> {
-
         let token_address = Pubkey::from_str(&token.address.unwrap())?;
 
         if let Some(&existing_index) = self.address_to_node.get(&token_address) {
@@ -266,7 +263,6 @@ impl Graph {
         Ok(graph)
     }
 
-
     // pub fn find_arbitrage_cycles(&self) -> Result<()> {
     //     for cycle in &self.all_cycles {
     //         // Forward direction
@@ -294,7 +290,6 @@ impl Graph {
     //     Ok(())
     // }
 
-
     pub fn build_cycles(&mut self, max_depth: usize) -> Result<()> {
         let start = Instant::now();
 
@@ -310,12 +305,10 @@ impl Graph {
             &mut path,
             max_depth,
             &mut cycles,
-            self.wsol_address,
         );
 
         let mut all_cycles: HashSet<Vec<usize>> = HashSet::new();
         let mut wrong_cycle_counter: usize = 0;
-
 
         for mut cycle in cycles {
             let need_change = self.check_cycle(cycle.as_mut());
@@ -348,11 +341,10 @@ impl Graph {
         let duration = start.elapsed();
         info!("Cycles Building Took: {:?}", duration);
 
-
         Ok(())
     }
 
-    pub fn check_cycle(&self, cycle: &mut Vec<usize>) -> bool {
+    pub fn check_cycle(&self, cycle: &mut [usize]) -> bool {
         let cycle_len = cycle.len();
         let mut need_change = false;
         let mut last_node: usize = self.wsol_node; // WSOL
@@ -362,27 +354,29 @@ impl Graph {
             let edge = &self.edges[*pool];
             match edge.get_other_node(last_node) {
                 Some(other_node) => last_node = other_node,
-                None => { need_change = true; problematic_edge_index = index; break; },
+                None => {
+                    need_change = true;
+                    problematic_edge_index = index;
+                    break;
+                }
             }
-
         }
         if !need_change && last_node != 0 {
-            problematic_edge_index = cycle_len-1;
+            problematic_edge_index = cycle_len - 1;
             need_change = true;
             println!("Last Edge Was Wrong");
         }
-        
+
         if need_change {
             // info!(%problematic_edge_index, "Wrong Edge Index");
             // println!("Cycle before rotation: {:?}", &cycle);
             if problematic_edge_index < cycle_len && problematic_edge_index > 0 {
                 cycle.rotate_left(1);
             } else if problematic_edge_index == 0 {
-                cycle.rotate_left(cycle_len-1);
+                cycle.rotate_left(cycle_len - 1);
             }
             // println!("Cycle after rotation: {:?}", &cycle);
         }
-
 
         need_change
     }
@@ -395,7 +389,6 @@ impl Graph {
         path: &mut Vec<usize>,
         max_depth: usize,
         cycles: &mut HashSet<Vec<usize>>,
-        wsol: Pubkey,
     ) {
         if path.len() >= max_depth {
             return;
@@ -420,7 +413,7 @@ impl Graph {
                     let edge = &self.edges[*pool_index];
                     let node_a = &self.nodes[edge.node_lowest];
                     let node_b = &self.nodes[edge.node_highest];
-                    node_a.address == wsol || node_b.address == wsol
+                    node_a.address == self.wsol_address || node_b.address == self.wsol_address
                 }) {
                     canonical.rotate_left(pos);
                 }
@@ -434,7 +427,6 @@ impl Graph {
                 path,
                 max_depth,
                 cycles,
-                wsol,
             );
 
             path.pop();
@@ -445,7 +437,9 @@ impl Graph {
     #[inline]
     fn canonicalize(cycle: &[usize]) -> Vec<usize> {
         let n = cycle.len();
-        if n == 0 { return Vec::new(); }
+        if n == 0 {
+            return Vec::new();
+        }
 
         let (min_idx, _) = cycle
             .iter()
@@ -455,10 +449,7 @@ impl Graph {
 
         let forward: Vec<usize> = (0..n).map(|i| cycle[(min_idx + i) % n]).collect();
 
-        let mut reversed: Vec<usize> = cycle.iter()
-            .rev()
-            .map(|&edge| edge)
-            .collect();
+        let mut reversed: Vec<usize> = cycle.iter().rev().copied().collect();
 
         let (rev_min_idx, _) = reversed
             .iter()
@@ -467,19 +458,20 @@ impl Graph {
             .unwrap();
         reversed.rotate_left(rev_min_idx);
 
-        if forward <= reversed { forward } else { reversed }
+        if forward <= reversed {
+            forward
+        } else {
+            reversed
+        }
     }
-
 }
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
     use super::*;
+    use std::vec;
 
-
-
-   #[test]
+    #[test]
     fn test_canonicalize_empty_cycle() {
         let cycle: Vec<usize> = vec![];
         let result = Graph::canonicalize(&cycle);

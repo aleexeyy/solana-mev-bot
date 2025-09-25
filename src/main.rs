@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures::future::join_all;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_mev_bot::{bootstrap, decoders, graph};
@@ -9,10 +10,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use futures::future::join_all;
 use tracing::{info, warn};
-
-
 
 fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
     // want all files with a .json extension
@@ -58,7 +56,7 @@ async fn main() -> Result<()> {
 
     let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
 
-    let _ = graph.build_cycles(4)?;
+    graph.build_cycles(4)?;
 
     //https://api.mainnet-beta.solana.com
     //https://api.devnet.solana.com

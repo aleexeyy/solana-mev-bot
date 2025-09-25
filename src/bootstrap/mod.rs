@@ -1,5 +1,5 @@
-use tokio::fs::create_dir_all;
 use anyhow::Result;
+use tokio::fs::create_dir_all;
 
 pub mod orca;
 pub mod pool_schema;
@@ -12,7 +12,7 @@ pub async fn update_all(data_folder_path: &str, is_test: bool) -> Result<()> {
     // let raydium_bootstrap_task = tokio::spawn(async { raydium::fetch_pools(data_folter_path, is_test).await.unwrap() });
 
     let (_, _) = tokio::try_join!(
-        orca::fetch_pools(data_folder_path, is_test), 
+        orca::fetch_pools(data_folder_path, is_test),
         raydium::fetch_pools(data_folder_path, is_test),
     )?;
 
