@@ -23,6 +23,7 @@ jobs:
         with:
           toolchain: stable
           override: true
+          components: rustfmt,clippy
 
       - name: Cache cargo registry
         uses: actions/cache@v3
