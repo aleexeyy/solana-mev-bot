@@ -3,7 +3,7 @@ use jito_protos::shredstream::{
 };
 
 pub async fn deshred() -> Result<(), std::io::Error> {
-    let mut client = ShredstreamProxyClient::connect("http://127.0.0.1:9999")
+    let mut client = ShredstreamProxyClient::connect("http://127.0.0.1:50051")
         .await
         .unwrap();
     let mut stream = client
@@ -27,6 +27,10 @@ pub async fn deshred() -> Result<(), std::io::Error> {
             entries.len(),
             entries.iter().map(|e| e.transactions.len()).sum::<usize>()
         );
+
+        entries.iter().for_each(|e| {
+            println!("{:?}", e.transactions);
+        });
     }
     Ok(())
 }
