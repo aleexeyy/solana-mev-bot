@@ -1,0 +1,10 @@
+# IDE
+.vscode/
+.idea/
+
+# Rust build artifacts
+target/
+client/target/
+
+# Local data
+client/cached-blockchain-data/
