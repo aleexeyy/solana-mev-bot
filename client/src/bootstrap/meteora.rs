@@ -1,11 +1,15 @@
 use std::collections::HashSet;
-use reqwest::Url;
-use tokio::fs::File;
-use tokio::io::{AsyncWriteExt, BufWriter};
-use crate::bootstrap::pool_schema::TokenInfo;
+
 use anyhow::{Context, Result};
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Deserializer;
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, BufWriter},
+};
+
+use crate::bootstrap::pool_schema::TokenInfo;
 
 #[derive(Deserialize)]
 struct MeteoraPool {
@@ -20,7 +24,6 @@ struct MeteoraPool {
     base_fee: Option<u32>,
     dynamic_fee: Option<u32>,
 }
-
 
 #[derive(Deserialize)]
 struct MeteoraPoolsResponse {
@@ -41,11 +44,8 @@ pub async fn fetch_pools(data_folder_path: &str, is_test: bool) -> Result<HashSe
 
     let mut first_item = true;
     let client = reqwest::Client::new();
-    let mut url =
-        Url::parse("https://dammv2-api.meteora.ag/pools?order=desc&limit=100")
-            .context("Invalid Orca API URL")?;
-
-
+    let mut url = Url::parse("https://dammv2-api.meteora.ag/pools?order=desc&limit=100")
+        .context("Invalid Orca API URL")?;
 
     Ok(HashSet::new())
 }

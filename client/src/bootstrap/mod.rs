@@ -1,10 +1,10 @@
 use anyhow::Result;
 use tokio::fs::create_dir_all;
 
+pub mod meteora;
 pub mod orca;
 pub mod pool_schema;
 pub mod raydium;
-pub mod meteora;
 
 pub async fn update_all(data_folder_path: &str, is_test: bool) -> Result<()> {
     create_dir_all(data_folder_path).await?;

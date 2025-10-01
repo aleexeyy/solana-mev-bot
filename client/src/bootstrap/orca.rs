@@ -1,13 +1,15 @@
-use super::pool_schema::{DexType, PoolInfo, PoolType, TokenInfo};
+use std::collections::HashSet;
+
 use anyhow::{Context, Result};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
-use std::collections::HashSet;
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
 };
+
+use super::pool_schema::{DexType, PoolInfo, PoolType, TokenInfo};
 #[derive(Debug, Serialize, Deserialize)]
 struct OrcaPool {
     address: Option<String>,

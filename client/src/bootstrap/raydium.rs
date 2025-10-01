@@ -1,15 +1,17 @@
-use super::pool_schema::{DexType, PoolInfo, PoolType, TokenInfo};
+use std::collections::{HashMap, HashSet};
+
 use anyhow::{Context, Result};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
-use std::collections::{HashMap, HashSet};
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
 };
+
+use super::pool_schema::{DexType, PoolInfo, PoolType, TokenInfo};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct RaydiumPool {

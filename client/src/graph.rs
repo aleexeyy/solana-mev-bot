@@ -5,15 +5,15 @@ use std::{
     time::Instant,
 };
 
+use anyhow::{Result, anyhow};
+use ethnum::U256;
 use solana_sdk::pubkey::Pubkey;
 use tracing::{info, warn};
 
-use crate::bootstrap::pool_schema::{
-    DexType, PoolInfo, PoolType, PoolUpdate, StoredPools, TokenInfo,
+use crate::{
+    bootstrap::pool_schema::{DexType, PoolInfo, PoolType, PoolUpdate, StoredPools, TokenInfo},
+    get_all_pool_files,
 };
-use anyhow::{Result, anyhow};
-use ethnum::U256;
-use crate::get_all_pool_files;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -351,8 +351,6 @@ impl Graph {
                             cycles.insert(key, vec![canonical.clone()]);
                         }
                     }
-
-
                 }
             }
 
@@ -437,13 +435,13 @@ impl Graph {
 
         need_change
     }
-    
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::vec;
+
+    use super::*;
 
     #[test]
     fn test_canonicalize_empty_cycle() {

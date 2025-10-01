@@ -1,7 +1,8 @@
-use crate::bootstrap::pool_schema::PoolUpdate;
 use anyhow::{Result, anyhow};
 use solana_sdk::account::Account;
 use tracing::error;
+
+use crate::bootstrap::pool_schema::PoolUpdate;
 
 pub fn decode_raydium_account(account: &Account) -> Result<PoolUpdate> {
     if account.data.len() != 1544 {

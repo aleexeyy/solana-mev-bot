@@ -1,5 +1,5 @@
 use jito_protos::shredstream::{
-    shredstream_proxy_client::ShredstreamProxyClient, SubscribeEntriesRequest,
+    SubscribeEntriesRequest, shredstream_proxy_client::ShredstreamProxyClient,
 };
 
 pub async fn deshred() -> Result<(), std::io::Error> {
