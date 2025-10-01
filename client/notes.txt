@@ -1,0 +1,1 @@
+1. Can improve negative cycle search algorithm - during setup process find all possible unique cycles with given max length, then just among these find negative cycles.
