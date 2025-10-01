@@ -15,5 +15,4 @@ tonic-prost = { workspace = true }
 [build-dependencies]
 tonic-prost = { workspace = true }
 protobuf-src = "2.1.1"
-tonic-build = { workspace = true }
 tonic-prost-build = { workspace = true }

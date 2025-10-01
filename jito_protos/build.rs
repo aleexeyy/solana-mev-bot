@@ -1,6 +1,3 @@
-use tonic_build;
-use tonic_prost_build;
-
 fn main() {
     const PROTOC_ENVAR: &str = "PROTOC";
     if std::env::var(PROTOC_ENVAR).is_err() {
