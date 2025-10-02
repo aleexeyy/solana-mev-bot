@@ -1,13 +1,12 @@
 use std::{env, fs::read_to_string, str::FromStr, sync::Arc, time::Instant};
 
 use anyhow::Result;
-use client::{bootstrap, decoders, deshred, get_all_pool_files, graph};
+use client::{bootstrap, decoders, get_all_pool_files, get_shreds, graph};
 use futures::future::join_all;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tracing::{info, warn};
-
 fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
     let pool_files = get_all_pool_files(data_folder_path)?;
 
@@ -44,7 +43,7 @@ async fn main() -> Result<()> {
         println!("Bootstrap took: {:?}", duration);
     }
 
-    deshred::deshred().await?;
+    get_shreds::deshred().await?;
 
     panic!("Test Panic");
     let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
