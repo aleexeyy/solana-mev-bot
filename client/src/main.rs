@@ -1,13 +1,13 @@
 use std::{env, fs::read_to_string, sync::Arc, time::Instant};
 
 use anyhow::Result;
-use client::{bootstrap, decoders, get_all_pool_files, get_shreds, graph};
-use futures::future::join_all;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
-use solana_sdk::{account::Account, pubkey::Pubkey};
-use tokio::sync::RwLock;
-use tracing::{info, warn};
+use arc_swap::ArcSwap;
+use client::{
+    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders,
+    shred_decoders::DecodeJob,
+};
+use solana_sdk::pubkey::Pubkey;
+use tokio::sync::mpsc;
 
 fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
     let pool_files = get_all_pool_files(data_folder_path)?;
@@ -45,22 +45,38 @@ async fn main() -> Result<()> {
         println!("Bootstrap took: {:?}", duration);
     }
 
-    let graph = graph::Graph::build_graph(DATA_FOLDER)?;
-    let graph = Arc::new(RwLock::new(graph));
-    {
-        let mut g = graph.write().await;
-        g.build_cycles(4)?;
-    }
+    let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
+    graph.build_cycles(4)?;
+
+    let graph = Arc::new(ArcSwap::new(Arc::new(graph)));
+
+    let (decode_tx, decode_rx) = mpsc::channel::<Vec<DecodeJob>>(128);
 
     let graph_for_decoder = Arc::clone(&graph);
-    let graph_for_patcher = Arc::clone(&graph);
-    let graph_for_arbitrage = Arc::clone(&graph);
+    // let graph_for_arbitrage = Arc::clone(&graph);
 
     tokio::spawn(async move {
-        if let Err(e) = get_shreds::deshred(graph_for_decoder).await {
+        let snapshot = graph_for_decoder.load_full();
+        shred_decoders::test_decode(decode_rx, &snapshot).await;
+    });
+
+    tokio::spawn(async move {
+        let decode_tx = decode_tx.clone();
+        if let Err(e) = get_shreds::deshred(decode_tx).await {
             eprintln!("Shredstream error: {:?}", e);
         }
     });
+
+    //TODO: Patcher, using WebSocket fetch blocks and apply updates
+    // let graph_for_patcher = Arc::clone(&graph);
+    // tokio::spawn(async move {
+    //     loop {
+    //         let mut new_graph = (*graph_for_patcher.load_full()).clone_mutable();
+    //         new_graph.update_something().unwrap();
+    //         graph_for_patcher.store(Arc::new(new_graph));
+    //         tokio::time::sleep(Duration::from_millis(400)).await;
+    //     }
+    // });
 
     // let client = Arc::new(RpcClient::new_with_commitment(
     //     "https://api.mainnet-beta.solana.com".to_string(),

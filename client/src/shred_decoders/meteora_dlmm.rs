@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::transaction_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
+use crate::shred_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
 pub struct MeteoraDLMMTargetTransaction;
 
 impl TargetTransaction for MeteoraDLMMTargetTransaction {

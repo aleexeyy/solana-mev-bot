@@ -24,3 +24,6 @@ solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
 dotenvy = { workspace = true }
 libc = "0.2.176"
+tokio-stream = "0.1.17"
+num_cpus = "1.17.0"
+arc-swap = "1.7.1"

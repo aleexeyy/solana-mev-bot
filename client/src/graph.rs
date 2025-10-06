@@ -2,6 +2,10 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{read_dir, read_to_string},
     str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicI32, AtomicU128, Ordering},
+    },
     time::Instant,
 };
 
@@ -43,9 +47,9 @@ pub struct Edge {
     pub reversed: bool,
 
     //dynamic fields
-    pub sqrt_price: Option<u128>,
-    liquidity: Option<u128>,
-    current_tick_index: Option<i32>,
+    pub sqrt_price: AtomicU128,
+    liquidity: AtomicU128,
+    current_tick_index: AtomicI32,
 }
 
 impl Edge {
@@ -61,7 +65,7 @@ impl Edge {
         };
         let denominator = 10f64.powi(decimals_diff);
 
-        let scaled_price: U256 = U256::from(self.sqrt_price.unwrap());
+        let scaled_price: U256 = U256::from(self.sqrt_price.load(Ordering::Relaxed));
         let squared: U256 = scaled_price * scaled_price;
 
         let high: U256 = squared >> 128;
@@ -107,7 +111,7 @@ pub struct Graph {
     wsol_node: usize,
 
     pub nodes: Vec<Node>,
-    pub edges: Vec<Edge>,
+    pub edges: Vec<Arc<Edge>>,
 
     address_to_node: HashMap<Pubkey, usize>,
     address_to_edge: HashMap<Pubkey, usize>,
@@ -201,13 +205,13 @@ impl Graph {
             decimals_lowest: self.nodes[idx_lowest].decimals,
             decimals_highest: self.nodes[idx_highest].decimals,
             reversed,
-            sqrt_price: None,
-            liquidity: None,
-            current_tick_index: None,
+            sqrt_price: AtomicU128::new(0),
+            liquidity: AtomicU128::new(0),
+            current_tick_index: AtomicI32::new(0),
         };
 
         let index = self.edges.len();
-        self.edges.push(edge);
+        self.edges.push(Arc::new(edge));
         self.address_to_edge.insert(address, index);
 
         self.adjacency.get_mut(&idx_lowest).unwrap().insert(index);
@@ -226,13 +230,15 @@ impl Graph {
     }
 
     pub fn update_edge(&mut self, address: &Pubkey, data: PoolUpdate) -> Result<()> {
-        if let Some(edge_index) = self.address_to_edge.get(address)
-            && let Some(edge) = self.edges.get_mut(*edge_index)
-        {
-            edge.liquidity = Some(data.new_liquidity);
-            edge.sqrt_price = Some(data.new_sqrt_price);
-            edge.current_tick_index = Some(data.new_current_tick_index);
-            return Ok(());
+        if let Some(&edge_index) = self.address_to_edge.get(address) {
+            if let Some(edge) = self.edges.get(edge_index) {
+                edge.liquidity.store(data.new_liquidity, Ordering::Relaxed);
+                edge.sqrt_price
+                    .store(data.new_sqrt_price, Ordering::Relaxed);
+                edge.current_tick_index
+                    .store(data.new_current_tick_index, Ordering::Relaxed);
+                return Ok(());
+            }
         }
         Err(anyhow!("Edge with address {} doesn't exist", address))
     }
@@ -280,7 +286,7 @@ impl Graph {
 
         info!("Number of Keys: {:?}", &self.all_cycles.len());
 
-        dbg!(&self.all_cycles);
+        // dbg!(&self.all_cycles);
 
         let duration = start.elapsed();
         info!("Cycles Building Took: {:?}", duration);
@@ -675,8 +681,11 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(graph.edges[0].address, test_addres);
-        assert_eq!(graph.edges[0].liquidity.unwrap(), 123456);
-        assert_eq!(graph.edges[0].sqrt_price.unwrap(), 1234567);
-        assert_eq!(graph.edges[0].current_tick_index.unwrap(), -1234);
+        assert_eq!(graph.edges[0].liquidity.load(Ordering::Relaxed), 123456);
+        assert_eq!(graph.edges[0].sqrt_price.load(Ordering::Relaxed), 1234567);
+        assert_eq!(
+            graph.edges[0].current_tick_index.load(Ordering::Relaxed),
+            -1234
+        );
     }
 }

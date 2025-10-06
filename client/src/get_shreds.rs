@@ -10,17 +10,18 @@ use solana_sdk::{
     pubkey::Pubkey,
     transaction::{TransactionVersion, VersionedTransaction},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc::Sender};
 use tracing::info;
 
 use crate::{
     benchmark_tools::{measure_cpu_bound, measure_cpu_bound::get_cpu_time},
     graph::Graph,
+    shred_decoders,
+    shred_decoders::DecodeJob,
     target_dexes::{Program, match_program},
-    transaction_decoders,
 };
 
-pub async fn deshred(graph: Arc<RwLock<Graph>>) -> Result<()> {
+pub async fn deshred(decode_tx: Sender<Vec<DecodeJob>>) -> Result<()> {
     dotenv().ok();
     let shredstream_address = env::var("SHREDSTREAM_ADDRESS")?;
     let mut client = ShredstreamProxyClient::connect(shredstream_address).await?;
@@ -40,15 +41,18 @@ pub async fn deshred(graph: Arc<RwLock<Graph>>) -> Result<()> {
                 }
             };
 
-        filter_by_programs(entries.as_slice())?;
+        let target_shreds = filter_by_programs(entries.as_slice());
+
+        if !target_shreds.is_empty() {
+            if decode_tx.send(target_shreds).await.is_err() {
+                break;
+            };
+        }
     }
     Ok(())
 }
-pub fn filter_by_programs(entries: &[Entry]) -> Result<()> {
-    let t0 = std::time::Instant::now();
-    let before_cpu = get_cpu_time();
-
-    let matches: Vec<(usize, usize, usize, &VersionedTransaction, Program)> = entries
+pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
+    let matches: Vec<DecodeJob> = entries
         .iter()
         .enumerate()
         .flat_map(|(e_index, entry)| {
@@ -64,7 +68,13 @@ pub fn filter_by_programs(entries: &[Entry]) -> Result<()> {
                     {
                         if let Some(program) = match_program(account_key) {
                             if program == Program::Jupiter {
-                                return Some((e_index, t_index, program_index, tx, program));
+                                return Some((
+                                    e_index,
+                                    t_index,
+                                    program_index,
+                                    Arc::new(tx.clone()),
+                                    program,
+                                ));
                             }
 
                             if first_non_jupiter.is_none() {
@@ -73,50 +83,17 @@ pub fn filter_by_programs(entries: &[Entry]) -> Result<()> {
                         }
                     }
                     first_non_jupiter.map(|(program_index, program)| {
-                        (e_index, t_index, program_index, tx, program)
+                        (
+                            e_index,
+                            t_index,
+                            program_index,
+                            Arc::new(tx.clone()),
+                            program,
+                        )
                     })
                 })
         })
         .collect();
 
-    let filter_wall = t0.elapsed();
-
-    let mut decoded_ok = 0usize;
-    let mut decoded_err = 0usize;
-
-    for (e_index, t_index, program_index, tx, program) in &matches {
-        println!("{:?}", tx);
-
-        if let Ok(decoded_transaction) =
-            transaction_decoders::decode_transaction(*program, tx, *program_index)
-        {
-            decoded_ok += 1;
-            // println!("decoded transaction: {:?}", decoded_transaction);
-        } else {
-            decoded_err += 1;
-            // println!("Transaction decode failed with err");
-        }
-        println!("Match at {}:{}", e_index, t_index);
-        println!("Program: {:?}", program);
-        println!(
-            "------------------------------------------------------------------------------------------"
-        );
-    }
-
-    let total_wall = t0.elapsed();
-    let total_cpu = get_cpu_time() - before_cpu;
-
-    info!(
-        "entries={} matches={} decoded_ok={} decoded_err={} filter={:?} decode={:?} cpu_total={:?}",
-        entries.len(),
-        matches.len(),
-        decoded_ok,
-        decoded_err,
-        filter_wall,
-        total_wall - filter_wall,
-        total_cpu
-    );
-    println!();
-
-    Ok(())
+    matches
 }

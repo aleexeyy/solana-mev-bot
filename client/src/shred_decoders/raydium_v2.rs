@@ -1,17 +1,18 @@
 use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::transaction_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
-pub struct JupiterV6TargetTransaction;
+use crate::shred_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
 
-impl TargetTransaction for JupiterV6TargetTransaction {
+pub struct RaydiumV2TargetTransaction;
+
+impl TargetTransaction for RaydiumV2TargetTransaction {
     fn decode(
         &self,
         transaction: &VersionedTransaction,
         program_index: usize,
     ) -> Result<DecodedTransaction> {
         Err(anyhow!(
-            "JupiterV6TargetTransaction does not support decode"
+            "RaydiumV2TargetTransaction does not support decode"
         ))
     }
 
@@ -32,6 +33,7 @@ impl TargetTransaction for JupiterV6TargetTransaction {
     ) -> Result<DecodedInstruction> {
         todo!()
     }
+
     fn decode_add_liquidity_instruction(
         &self,
         data: &[u8],

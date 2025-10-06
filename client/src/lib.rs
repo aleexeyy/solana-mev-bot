@@ -1,14 +1,16 @@
+#![feature(integer_atomics)]
+
 use std::{fs::read_dir, path::PathBuf};
 
 use anyhow::Result;
 
 mod benchmark_tools;
 pub mod bootstrap;
-pub mod decoders;
+pub mod bootstrap_decoders;
 pub mod get_shreds;
 pub mod graph;
+pub mod shred_decoders;
 pub mod target_dexes;
-pub mod transaction_decoders;
 
 pub fn get_all_pool_files(data_folder_path: &str) -> Result<Vec<PathBuf>> {
     Ok(Vec::from_iter(

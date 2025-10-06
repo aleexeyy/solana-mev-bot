@@ -1,8 +1,16 @@
+use std::sync::Arc;
+
 use anyhow::Result;
+use futures::StreamExt;
+use num_cpus;
 use once_cell::sync::Lazy;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use tokio::{sync::mpsc::Receiver, task};
+use tokio_stream::wrappers::ReceiverStream;
 
-use crate::target_dexes::Program;
+use crate::{
+    benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph, target_dexes::Program,
+};
 
 mod jupiter_v6;
 mod meteora_dlmm;
@@ -109,4 +117,63 @@ pub fn decode_transaction(
 ) -> Result<DecodedTransaction> {
     let idx = program.index();
     DECODERS[idx].decode(transaction, program_index)
+}
+
+pub type DecodeJob = (usize, usize, usize, Arc<VersionedTransaction>, Program);
+
+pub async fn test_decode(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: &Arc<Graph>) {
+    // let stream = ReceiverStream::new(decode_rx);
+    // let concurrency = num_cpus::get().max(1);
+    //
+    // stream
+    //     .for_each_concurrent(concurrency, |batch: Vec<DecodeJob>| async move {
+    while let Some(batch) = decode_rx.recv().await {
+        let batch_size = batch.len();
+
+        let t0 = std::time::Instant::now();
+        let before_cpu = get_cpu_time();
+
+        let res = task::spawn_blocking(move || {
+            let mut decoded_ok = 0usize;
+            let mut decoded_err = 0usize;
+
+            for (e_index, t_index, program_index, tx, program) in batch {
+                // println!("{:?}", tx);
+
+                match decode_transaction(program, &*tx, program_index) {
+                    Ok(_decoded) => decoded_ok += 1,
+                    Err(_) => decoded_err += 1,
+                }
+            }
+            (decoded_ok, decoded_err)
+        })
+        .await;
+        match res {
+            Ok((ok, err)) => {
+                let processed = ok + err;
+                tracing::info!(
+                    batch_size = batch_size,
+                    processed = processed,
+                    ok = ok,
+                    err = err,
+                    "decoded batch results"
+                );
+            }
+            Err(join_err) => {
+                tracing::error!("spawn_blocking panicked: {:?}", join_err);
+            }
+        }
+
+        let total_wall = t0.elapsed();
+        let total_cpu = get_cpu_time() - before_cpu;
+
+        tracing::info!(
+            batch_size = batch_size,
+            wall = ?total_wall,
+            cpu_total = ?total_cpu,
+            "decode timing"
+        );
+    }
+    // })
+    // .await;
 }

@@ -6,7 +6,7 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 
-use crate::transaction_decoders::{
+use crate::shred_decoders::{
     DecodedInstruction, DecodedTransaction, OperationType, TargetTransaction,
 };
 
