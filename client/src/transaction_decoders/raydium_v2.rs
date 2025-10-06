@@ -1,20 +1,19 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::transaction_decoders::{DecodedInstruction, TargetTransaction}; // path relative to mod.rs
+use crate::transaction_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
 
-// unit struct — cheap to store as a 'static instance
 pub struct RaydiumV2TargetTransaction;
 
 impl TargetTransaction for RaydiumV2TargetTransaction {
-    fn decode(&self, transaction: &VersionedTransaction, program_index: usize) -> Result<()> {
-        // keep heavy logic in private functions if needed:
-        // decode_impl(transaction, program_index)?;
-        println!(
-            "RaydiumV2 decode called for program index {}",
-            program_index
-        );
-        Ok(())
+    fn decode(
+        &self,
+        transaction: &VersionedTransaction,
+        program_index: usize,
+    ) -> Result<DecodedTransaction> {
+        Err(anyhow!(
+            "RaydiumV2TargetTransaction does not support decode"
+        ))
     }
 
     fn decode_swap_instruction(

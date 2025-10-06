@@ -1,20 +1,18 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::transaction_decoders::{DecodedInstruction, TargetTransaction}; // path relative to mod.rs
-
-// unit struct — cheap to store as a 'static instance
+use crate::transaction_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
 pub struct JupiterV6TargetTransaction;
 
 impl TargetTransaction for JupiterV6TargetTransaction {
-    fn decode(&self, transaction: &VersionedTransaction, program_index: usize) -> Result<()> {
-        // keep heavy logic in private functions if needed:
-        // decode_impl(transaction, program_index)?;
-        println!(
-            "JupiterV6 decode called for program index {}",
-            program_index
-        );
-        Ok(())
+    fn decode(
+        &self,
+        transaction: &VersionedTransaction,
+        program_index: usize,
+    ) -> Result<DecodedTransaction> {
+        Err(anyhow!(
+            "JupiterV6TargetTransaction does not support decode"
+        ))
     }
 
     fn decode_swap_instruction(

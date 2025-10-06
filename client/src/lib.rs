@@ -2,6 +2,7 @@ use std::{fs::read_dir, path::PathBuf};
 
 use anyhow::Result;
 
+mod benchmark_tools;
 pub mod bootstrap;
 pub mod decoders;
 pub mod get_shreds;

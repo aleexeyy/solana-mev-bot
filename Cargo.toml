@@ -52,3 +52,4 @@ prost = "0.14.1"
 prost-types = "0.14.1"
 jito-protos = { path = "jito_protos" }
 once_cell = { version = "1.21.3" }
+dotenvy = "0.15.7"

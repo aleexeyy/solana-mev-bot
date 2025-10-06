@@ -1,29 +1,126 @@
-use anyhow::Result;
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use std::io::Read;
 
-use crate::transaction_decoders::{DecodedInstruction, TargetTransaction}; // path relative to mod.rs
+use anyhow::{Result, anyhow};
+use solana_sdk::{
+    message::compiled_instruction::CompiledInstruction, pubkey::Pubkey,
+    transaction::VersionedTransaction,
+};
 
-// unit struct — cheap to store as a 'static instance
+use crate::transaction_decoders::{
+    DecodedInstruction, DecodedTransaction, OperationType, TargetTransaction,
+};
 pub struct RaydiumV3TargetTransaction;
 
 impl TargetTransaction for RaydiumV3TargetTransaction {
-    fn decode(&self, transaction: &VersionedTransaction, program_index: usize) -> Result<()> {
-        // keep heavy logic in private functions if needed:
-        // decode_impl(transaction, program_index)?;
-        println!(
-            "RaydiumV3 decode called for program index {}",
-            program_index
-        );
-        Ok(())
+    fn decode(
+        &self,
+        transaction: &VersionedTransaction,
+        program_index: usize,
+    ) -> Result<DecodedTransaction> {
+        let target_instructions: Vec<&CompiledInstruction> = transaction
+            .message
+            .instructions()
+            .iter()
+            .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
+            .collect();
+
+        if target_instructions.len() == 0 {
+            return Err(anyhow!("Unsupported instructions"));
+        }
+
+        let account_keys = transaction.message.static_account_keys();
+        let mut decoded_instructions: Vec<DecodedInstruction> =
+            Vec::with_capacity(target_instructions.len());
+
+        for instruction in target_instructions {
+            let data = &instruction.data;
+            let accounts = &instruction.accounts;
+
+            let mut reader = data.as_slice();
+            let mut instruction_type = [0u8; 8];
+            reader.read_exact(&mut instruction_type)?;
+
+            let decoded_instruction = match instruction_type {
+                SWAP => self.decode_swap_instruction(reader, accounts, account_keys),
+                _ => return Err(anyhow!("Unsupported swap instruction type on RaydiumV3")),
+            }?;
+            decoded_instructions.push(decoded_instruction);
+        }
+
+        if decoded_instructions.len() == 0 {
+            return Err(anyhow!("Unsupported instructions"));
+        }
+
+        let decoded_transaction = DecodedTransaction {
+            instructions: decoded_instructions,
+        };
+        Ok(decoded_transaction)
     }
 
+    //example: https://solscan.io/tx/2j7ikfSmJ1AMt979tHmqKQGdv5KiBppveHoQTdhjxLkVkr3FjKf9C7kACkhAF6zUX3UZepumuQJzJMcWQESfAPyV
     fn decode_swap_instruction(
         &self,
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
     ) -> Result<DecodedInstruction> {
-        todo!()
+        if accounts.len() != SWAP_ACCOUNTS_LEN {
+            return Err(anyhow!(
+                "accounts len != SWAP_ACCOUNTS_LEN, received {} | expected {}",
+                accounts.len(),
+                SWAP_ACCOUNTS_LEN
+            ));
+        }
+
+        let pool_address = *account_keys
+            .get(usize::from(accounts[2]))
+            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_a_vault = *account_keys
+            .get(usize::from(accounts[5]))
+            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_b_vault = *account_keys
+            .get(usize::from(accounts[6]))
+            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_a_address = *account_keys
+            .get(usize::from(accounts[11]))
+            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_b_address = *account_keys
+            .get(usize::from(accounts[12]))
+            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+
+        let specified_amount: u64 = u64::from_le_bytes(data[0..8].try_into()?);
+        let amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
+
+        let sqrt_price_limit: u128 = u128::from_le_bytes(data[16..32].try_into()?);
+        let is_exact_input: bool = data[32] == 1;
+
+        if is_exact_input {
+            Ok(DecodedInstruction {
+                pool_address,
+                token_in_address: token_a_address,
+                token_out_address: token_b_address,
+                token_in_vault: token_a_vault,
+                token_out_vault: token_b_vault,
+                operation_type: OperationType::SwapExactInput {
+                    amount_in: specified_amount,
+                    minimum_amount_out: amount_threshold,
+                    sqrt_price_limit,
+                },
+            })
+        } else {
+            Ok(DecodedInstruction {
+                pool_address,
+                token_in_address: token_a_address,
+                token_out_address: token_b_address,
+                token_in_vault: token_a_vault,
+                token_out_vault: token_b_vault,
+                operation_type: OperationType::SwapExactOutput {
+                    amount_out: specified_amount,
+                    maximum_amount_in: amount_threshold,
+                    sqrt_price_limit,
+                },
+            })
+        }
     }
 
     fn decode_remove_liquidity_instruction(
@@ -43,3 +140,6 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         todo!()
     }
 }
+
+const SWAP: [u8; 8] = [43, 4, 237, 11, 26, 201, 30, 98];
+const SWAP_ACCOUNTS_LEN: usize = 16;

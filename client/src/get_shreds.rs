@@ -1,19 +1,29 @@
-use std::str::FromStr;
+use std::{env, sync::Arc};
 
 use anyhow::Result;
+use dotenvy::dotenv;
 use jito_protos::shredstream::{
     SubscribeEntriesRequest, shredstream_proxy_client::ShredstreamProxyClient,
 };
 use solana_entry::entry::Entry;
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::{
+    pubkey::Pubkey,
+    transaction::{TransactionVersion, VersionedTransaction},
+};
+use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::{
+    benchmark_tools::{measure_cpu_bound, measure_cpu_bound::get_cpu_time},
+    graph::Graph,
     target_dexes::{Program, match_program},
     transaction_decoders,
 };
 
-pub async fn deshred() -> Result<()> {
-    let mut client = ShredstreamProxyClient::connect("http://88.99.142.79:50051").await?;
+pub async fn deshred(graph: Arc<RwLock<Graph>>) -> Result<()> {
+    dotenv().ok();
+    let shredstream_address = env::var("SHREDSTREAM_ADDRESS")?;
+    let mut client = ShredstreamProxyClient::connect(shredstream_address).await?;
 
     let mut stream = client
         .subscribe_entries(SubscribeEntriesRequest {})
@@ -29,27 +39,19 @@ pub async fn deshred() -> Result<()> {
                     continue;
                 }
             };
-        println!(
-            "slot {}, entries: {}, transactions: {}",
-            slot_entry.slot,
-            entries.len(),
-            entries.iter().map(|e| e.transactions.len()).sum::<usize>()
-        );
 
-        let _ = filter_by_programs(entries.as_slice())?;
+        filter_by_programs(entries.as_slice())?;
     }
     Ok(())
 }
+pub fn filter_by_programs(entries: &[Entry]) -> Result<()> {
+    let t0 = std::time::Instant::now();
+    let before_cpu = get_cpu_time();
 
-pub fn filter_by_programs(
-    entries: &[Entry],
-) -> Result<Vec<(usize, usize, usize, &VersionedTransaction, Program)>> {
-    // Collect all matching transactions; small linear scan per tx over its account keys.
     let matches: Vec<(usize, usize, usize, &VersionedTransaction, Program)> = entries
         .iter()
         .enumerate()
         .flat_map(|(e_index, entry)| {
-            // move closure so e_index is copied into it; tx is borrowed
             entry
                 .transactions
                 .iter()
@@ -77,21 +79,44 @@ pub fn filter_by_programs(
         })
         .collect();
 
+    let filter_wall = t0.elapsed();
+
+    let mut decoded_ok = 0usize;
+    let mut decoded_err = 0usize;
+
     for (e_index, t_index, program_index, tx, program) in &matches {
         println!("{:?}", tx);
+
         if let Ok(decoded_transaction) =
             transaction_decoders::decode_transaction(*program, tx, *program_index)
         {
-            println!("decoded transaction: {:?}", decoded_transaction);
+            decoded_ok += 1;
+            // println!("decoded transaction: {:?}", decoded_transaction);
         } else {
-            println!("Transaction decode failed with err");
+            decoded_err += 1;
+            // println!("Transaction decode failed with err");
         }
-        // println!("Match at {}:{}", e_index, t_index);
+        println!("Match at {}:{}", e_index, t_index);
         println!("Program: {:?}", program);
         println!(
             "------------------------------------------------------------------------------------------"
         );
     }
 
-    Ok(matches)
+    let total_wall = t0.elapsed();
+    let total_cpu = get_cpu_time() - before_cpu;
+
+    info!(
+        "entries={} matches={} decoded_ok={} decoded_err={} filter={:?} decode={:?} cpu_total={:?}",
+        entries.len(),
+        matches.len(),
+        decoded_ok,
+        decoded_err,
+        filter_wall,
+        total_wall - filter_wall,
+        total_cpu
+    );
+    println!();
+
+    Ok(())
 }

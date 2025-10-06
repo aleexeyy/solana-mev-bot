@@ -8,3 +8,5 @@ client/target/
 
 # Local data
 client/cached-blockchain-data/
+client/src/alts.json
+.env
