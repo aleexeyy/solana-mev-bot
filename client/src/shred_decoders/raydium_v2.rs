@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::shred_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
+use crate::{
+    graph::Graph,
+    shred_decoders::{DecodedTransaction, TargetTransaction, interfaces::DecodedInstruction},
+};
 
 pub struct RaydiumV2TargetTransaction;
 
@@ -10,7 +15,9 @@ impl TargetTransaction for RaydiumV2TargetTransaction {
         &self,
         transaction: &VersionedTransaction,
         program_index: usize,
+        graph: &Arc<Graph>,
     ) -> Result<DecodedTransaction> {
+        tracing::warn!("Got Unsuported RaydiumV2 transaction: {:?}", transaction);
         Err(anyhow!(
             "RaydiumV2TargetTransaction does not support decode"
         ))
@@ -21,6 +28,7 @@ impl TargetTransaction for RaydiumV2TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -30,6 +38,7 @@ impl TargetTransaction for RaydiumV2TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -39,6 +48,7 @@ impl TargetTransaction for RaydiumV2TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }

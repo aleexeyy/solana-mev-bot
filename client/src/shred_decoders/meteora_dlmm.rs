@@ -1,7 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::{Result, anyhow};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
-use crate::shred_decoders::{DecodedInstruction, DecodedTransaction, TargetTransaction};
+use crate::{
+    graph::Graph,
+    shred_decoders::{DecodedTransaction, TargetTransaction, interfaces::DecodedInstruction},
+};
+
 pub struct MeteoraDLMMTargetTransaction;
 
 impl TargetTransaction for MeteoraDLMMTargetTransaction {
@@ -9,6 +15,7 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
         &self,
         transaction: &VersionedTransaction,
         program_index: usize,
+        graph: &Arc<Graph>,
     ) -> Result<DecodedTransaction> {
         Err(anyhow!(
             "MeteoraDLMMTargetTransaction does not support decode"
@@ -20,6 +27,7 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -29,6 +37,7 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -37,6 +46,7 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }

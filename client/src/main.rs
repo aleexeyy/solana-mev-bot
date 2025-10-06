@@ -1,10 +1,10 @@
-use std::{env, fs::read_to_string, sync::Arc, time::Instant};
+use std::{env, fs::read_to_string, str::FromStr, sync::Arc, time::Instant};
 
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use client::{
     bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders,
-    shred_decoders::DecodeJob,
+    shred_decoders::{DecodeJob, meteora_v3::MeteoraV3TargetTransaction},
 };
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
@@ -44,7 +44,14 @@ async fn main() -> Result<()> {
         let duration = start.elapsed();
         println!("Bootstrap took: {:?}", duration);
     }
-
+    // let test_owner = Pubkey::from_str("DxZ2rMQfnT52sW4hEmADh9PULKofcCNwp9KeG4SQ77aB").unwrap();
+    // let test_token = Pubkey::from_str("F9a5yraZ92WHRBaA3CMnRu2R26y5rCVjHzwGuoD8EYSj").unwrap();
+    // let token_account =
+    //     MeteoraV3TargetTransaction::find_token_account_address(&test_owner, &test_token);
+    //
+    // println!("Received Token Account Address: {:?}", token_account);
+    //
+    // panic!("Test Panic!!!");
     let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
     graph.build_cycles(4)?;
 
@@ -57,7 +64,7 @@ async fn main() -> Result<()> {
 
     tokio::spawn(async move {
         let snapshot = graph_for_decoder.load_full();
-        shred_decoders::test_decode(decode_rx, &snapshot).await;
+        shred_decoders::decode_transaction(decode_rx, snapshot).await;
     });
 
     tokio::spawn(async move {

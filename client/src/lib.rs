@@ -1,4 +1,5 @@
 #![feature(integer_atomics)]
+extern crate core;
 
 use std::{fs::read_dir, path::PathBuf};
 

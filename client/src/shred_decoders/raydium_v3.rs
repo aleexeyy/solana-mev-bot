@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use solana_sdk::{
@@ -6,9 +6,14 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 
-use crate::shred_decoders::{
-    DecodedInstruction, DecodedTransaction, OperationType, TargetTransaction,
+use crate::{
+    graph::Graph,
+    shred_decoders::{
+        DecodedTransaction, TargetTransaction,
+        interfaces::{DecodedInstruction, OperationType},
+    },
 };
+
 pub struct RaydiumV3TargetTransaction;
 
 impl TargetTransaction for RaydiumV3TargetTransaction {
@@ -16,6 +21,7 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         &self,
         transaction: &VersionedTransaction,
         program_index: usize,
+        graph: &Arc<Graph>,
     ) -> Result<DecodedTransaction> {
         let target_instructions: Vec<&CompiledInstruction> = transaction
             .message
@@ -24,7 +30,7 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
             .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
             .collect();
 
-        if target_instructions.len() == 0 {
+        if target_instructions.is_empty() {
             return Err(anyhow!("Unsupported instructions"));
         }
 
@@ -41,13 +47,19 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
             reader.read_exact(&mut instruction_type)?;
 
             let decoded_instruction = match instruction_type {
-                SWAP => self.decode_swap_instruction(reader, accounts, account_keys),
-                _ => return Err(anyhow!("Unsupported swap instruction type on RaydiumV3")),
+                SWAP => self.decode_swap_instruction(reader, accounts, account_keys, graph),
+                _ => {
+                    tracing::warn!(
+                        "Got Unsupported RaydiumV3 instruction type: {:?}",
+                        transaction
+                    );
+                    return Err(anyhow!("Unsupported swap instruction type on RaydiumV3"));
+                }
             }?;
             decoded_instructions.push(decoded_instruction);
         }
 
-        if decoded_instructions.len() == 0 {
+        if decoded_instructions.is_empty() {
             return Err(anyhow!("Unsupported instructions"));
         }
 
@@ -63,6 +75,7 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        _graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         if accounts.len() != SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
@@ -75,16 +88,16 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         let pool_address = *account_keys
             .get(usize::from(accounts[2]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_a_vault = *account_keys
-            .get(usize::from(accounts[5]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_b_vault = *account_keys
-            .get(usize::from(accounts[6]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_a_address = *account_keys
+        // let token_in_vault = *account_keys
+        //     .get(usize::from(accounts[5]))
+        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        // let token_out_vault = *account_keys
+        //     .get(usize::from(accounts[6]))
+        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_in_address = *account_keys
             .get(usize::from(accounts[11]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_b_address = *account_keys
+        let token_out_address = *account_keys
             .get(usize::from(accounts[12]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
@@ -97,10 +110,8 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         if is_exact_input {
             Ok(DecodedInstruction {
                 pool_address,
-                token_in_address: token_a_address,
-                token_out_address: token_b_address,
-                token_in_vault: token_a_vault,
-                token_out_vault: token_b_vault,
+                token_in_address,
+                token_out_address,
                 operation_type: OperationType::SwapExactInput {
                     amount_in: specified_amount,
                     minimum_amount_out: amount_threshold,
@@ -110,10 +121,8 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         } else {
             Ok(DecodedInstruction {
                 pool_address,
-                token_in_address: token_a_address,
-                token_out_address: token_b_address,
-                token_in_vault: token_a_vault,
-                token_out_vault: token_b_vault,
+                token_in_address,
+                token_out_address,
                 operation_type: OperationType::SwapExactOutput {
                     amount_out: specified_amount,
                     maximum_amount_in: amount_threshold,
@@ -128,6 +137,7 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -136,6 +146,7 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
         todo!()
     }

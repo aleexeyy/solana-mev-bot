@@ -22,12 +22,13 @@ use crate::{
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node {
-    address: Pubkey,
+    pub address: Pubkey,
     decimals: u8,
     name: String,
     pub symbol: String,
 }
 
+// TODO: reimplement edge to save tokens as tokenA and tokenB
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Edge {
@@ -40,8 +41,8 @@ pub struct Edge {
     token_vault_lowest: Pubkey,  // lowest index
     token_vault_highest: Pubkey, // highest index
     config: Pubkey,
-    node_lowest: usize,
-    node_highest: usize,
+    pub node_lowest: usize,
+    pub node_highest: usize,
     decimals_lowest: u8,
     decimals_highest: u8,
     pub reversed: bool,
@@ -140,6 +141,21 @@ impl Graph {
 }
 
 impl Graph {
+    pub fn get_node(&self, address: &Pubkey) -> Option<&Node> {
+        if let Some(node_index) = self.address_to_node.get(address) {
+            Some(&self.nodes[*node_index])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_edge(&self, address: &Pubkey) -> Option<&Arc<Edge>> {
+        if let Some(edge_index) = self.address_to_edge.get(address) {
+            Some(&self.edges[*edge_index])
+        } else {
+            None
+        }
+    }
     fn insert_node(&mut self, token: TokenInfo) -> Result<usize> {
         let token_address = Pubkey::from_str(&token.address.unwrap())?;
 
@@ -285,8 +301,6 @@ impl Graph {
         self.all_cycles = cycles;
 
         info!("Number of Keys: {:?}", &self.all_cycles.len());
-
-        // dbg!(&self.all_cycles);
 
         let duration = start.elapsed();
         info!("Cycles Building Took: {:?}", duration);

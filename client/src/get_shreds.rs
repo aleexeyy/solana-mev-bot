@@ -6,17 +6,9 @@ use jito_protos::shredstream::{
     SubscribeEntriesRequest, shredstream_proxy_client::ShredstreamProxyClient,
 };
 use solana_entry::entry::Entry;
-use solana_sdk::{
-    pubkey::Pubkey,
-    transaction::{TransactionVersion, VersionedTransaction},
-};
-use tokio::sync::{RwLock, mpsc::Sender};
-use tracing::info;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
-    benchmark_tools::{measure_cpu_bound, measure_cpu_bound::get_cpu_time},
-    graph::Graph,
-    shred_decoders,
     shred_decoders::DecodeJob,
     target_dexes::{Program, match_program},
 };

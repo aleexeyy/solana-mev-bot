@@ -696,6 +696,7 @@ dependencies = [
  "solana-commitment-config",
  "solana-entry",
  "solana-sdk",
+ "solana-sha256-hasher",
  "tokio",
  "tokio-stream",
  "tracing",

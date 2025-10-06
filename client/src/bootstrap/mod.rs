@@ -9,9 +9,6 @@ pub mod raydium;
 pub async fn update_all(data_folder_path: &str, is_test: bool) -> Result<()> {
     create_dir_all(data_folder_path).await?;
 
-    // let orca_bootstrap_task = tokio::spawn(async { orca::fetch_pools(data_folter_path, is_test).await.unwrap() });
-    // let raydium_bootstrap_task = tokio::spawn(async { raydium::fetch_pools(data_folter_path, is_test).await.unwrap() });
-
     let (_, _) = tokio::try_join!(
         orca::fetch_pools(data_folder_path, is_test),
         raydium::fetch_pools(data_folder_path, is_test),
