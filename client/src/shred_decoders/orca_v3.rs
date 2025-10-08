@@ -47,16 +47,15 @@ impl TargetTransaction for OrcaV3TargetTransaction {
             reader.read_exact(&mut instruction_type)?;
 
             let decoded_instruction = match instruction_type {
-                SWAP_V1 => self.decode_swap_instruction(reader, accounts, account_keys, graph),
-                SWAP_V2 => self.decode_swap_instruction(reader, accounts, account_keys, graph),
-                REMOVE_LIQUIDITY => {
-                    self.decode_remove_liquidity_instruction(reader, accounts, account_keys, graph)
-                }
-                ADD_LIQUIDITY => {
-                    self.decode_add_liquidity_instruction(reader, accounts, account_keys, graph)
-                }
+                SWAP_V1 => self.decode_swap_v1_instruction(reader, accounts, account_keys, graph),
+                SWAP_V2 => self.decode_swap_v2_instruction(reader, accounts, account_keys),
+                // REMOVE_LIQUIDITY => {
+                //     self.decode_remove_liquidity_instruction(reader, accounts, account_keys, graph)
+                // }
+                // ADD_LIQUIDITY => {
+                //     self.decode_add_liquidity_instruction(reader, accounts, account_keys, graph)
+                // }
                 _ => {
-                    tracing::warn!("Unsupported OrcaV3 instruction: {:?}", transaction);
                     return Err(anyhow!("Unsupported swap instruction type on OrcaV3"));
                 }
             }?;
@@ -72,48 +71,6 @@ impl TargetTransaction for OrcaV3TargetTransaction {
         };
         Ok(decoded_transaction)
     }
-
-    fn decode_swap_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> Result<DecodedInstruction> {
-        match accounts.len() {
-            SWAP_V1_ACCOUNTS_LEN => {
-                self.decode_swap_v1_instruction(data, accounts, account_keys, graph)
-            }
-            SWAP_V2_ACCOUNTS_LEN => {
-                self.decode_swap_v2_instruction(data, accounts, account_keys, graph)
-            }
-            _ => Err(anyhow!("Unsupported swap instruction account length")),
-        }
-    }
-
-    fn decode_remove_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> Result<DecodedInstruction> {
-        tracing::warn!(
-            "Unsupported Remove liquidity OrcaV3 instruction: {:?}",
-            data
-        );
-        Err(anyhow!("Unsupported instructions"))
-    }
-    fn decode_add_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> Result<DecodedInstruction> {
-        tracing::warn!("Unsupported Add liquidity OrcaV3 instruction: {:?}", data);
-        Err(anyhow!("Unsupported instructions"))
-    }
 }
 
 impl OrcaV3TargetTransaction {
@@ -125,15 +82,16 @@ impl OrcaV3TargetTransaction {
         account_keys: &[Pubkey],
         graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
+        if accounts.len() != SWAP_V1_ACCOUNTS_LEN {
+            return Err(anyhow!(
+                "accounts len != SWAP_V1_ACCOUNTS_LEN, received {} | expected {}",
+                accounts.len(),
+                SWAP_V1_ACCOUNTS_LEN
+            ));
+        }
         let pool_address = *account_keys
             .get(usize::from(accounts[2]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        // let token_a_vault = *account_keys
-        //     .get(usize::from(accounts[4]))
-        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        // let token_b_vault = *account_keys
-        //     .get(usize::from(accounts[6]))
-        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
         let specified_amount: u64 = u64::from_le_bytes(data[0..8].try_into()?);
         let amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
@@ -193,17 +151,17 @@ impl OrcaV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        _graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
+        if accounts.len() != SWAP_V2_ACCOUNTS_LEN {
+            return Err(anyhow!(
+                "accounts len != SWAP_V1_ACCOUNTS_LEN, received {} | expected {}",
+                accounts.len(),
+                SWAP_V2_ACCOUNTS_LEN
+            ));
+        }
         let pool_address = *account_keys
             .get(usize::from(accounts[4]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        // let token_a_vault = *account_keys
-        //     .get(usize::from(accounts[8]))
-        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        // let token_b_vault = *account_keys
-        //     .get(usize::from(accounts[10]))
-        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
         let token_a_address = *account_keys
             .get(usize::from(accounts[5]))
             .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
@@ -250,6 +208,32 @@ impl OrcaV3TargetTransaction {
             })
         }
     }
+
+    fn decode_remove_liquidity_instruction(
+        &self,
+        data: &[u8],
+        accounts: &[u8],
+        account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
+    ) -> Result<DecodedInstruction> {
+        tracing::warn!(
+            "Unsupported Remove liquidity OrcaV3 instruction: {:?}",
+            data
+        );
+        Err(anyhow!("Unsupported instructions"))
+    }
+
+    // example: https://solscan.io/tx/4cmEUnyynF1azoebnYcoY6SE2qigF7kb6QQu7ekZwmpkHfJVQnmXLDZJHDZGaoLKLhhU8MC2ubtZ3RzNTby34xYo
+    fn decode_add_liquidity_instruction(
+        &self,
+        data: &[u8],
+        accounts: &[u8],
+        account_keys: &[Pubkey],
+        graph: &Arc<Graph>,
+    ) -> Result<DecodedInstruction> {
+        tracing::warn!("Unsupported Add liquidity OrcaV3 instruction: {:?}", data);
+        Err(anyhow!("Unsupported instructions"))
+    }
 }
 
 const SWAP_V1: [u8; 8] = [248, 198, 158, 145, 225, 117, 135, 200];
@@ -261,5 +245,5 @@ const SWAP_V2_ACCOUNTS_LEN: usize = 15;
 const REMOVE_LIQUIDITY: [u8; 8] = [2, 13, 19, 20, 0, 3, 4, 17];
 const REMOVE_LIQUIDITY_ACCOUNTS_LEN: usize = 15;
 
-const ADD_LIQUIDITY: [u8; 8] = [5, 15, 0, 3, 4, 2, 6, 7];
+const ADD_LIQUIDITY: [u8; 8] = [46, 156, 243, 118, 13, 205, 251, 178];
 const ADD_LIQUIDITY_ACCOUNTS_LEN: usize = 11;

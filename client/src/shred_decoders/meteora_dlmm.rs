@@ -21,7 +21,9 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
             "MeteoraDLMMTargetTransaction does not support decode"
         ))
     }
+}
 
+impl MeteoraDLMMTargetTransaction {
     fn decode_swap_instruction(
         &self,
         data: &[u8],

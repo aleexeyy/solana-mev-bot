@@ -12,29 +12,29 @@ pub trait TargetTransaction: Sync + Send {
         graph: &Arc<Graph>,
     ) -> anyhow::Result<DecodedTransaction>;
 
-    fn decode_swap_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> anyhow::Result<DecodedInstruction>;
-
-    fn decode_remove_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> anyhow::Result<DecodedInstruction>;
-
-    fn decode_add_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
-    ) -> anyhow::Result<DecodedInstruction>;
+    // fn decode_swap_instruction(
+    //     &self,
+    //     data: &[u8],
+    //     accounts: &[u8],
+    //     account_keys: &[Pubkey],
+    //     graph: &Arc<Graph>,
+    // ) -> anyhow::Result<DecodedInstruction>;
+    //
+    // fn decode_remove_liquidity_instruction(
+    //     &self,
+    //     data: &[u8],
+    //     accounts: &[u8],
+    //     account_keys: &[Pubkey],
+    //     graph: &Arc<Graph>,
+    // ) -> anyhow::Result<DecodedInstruction>;
+    //
+    // fn decode_add_liquidity_instruction(
+    //     &self,
+    //     data: &[u8],
+    //     accounts: &[u8],
+    //     account_keys: &[Pubkey],
+    //     graph: &Arc<Graph>,
+    // ) -> anyhow::Result<DecodedInstruction>;
 }
 
 // TODO: some DEXes write token_in and token_out, others just write if the swap is_direct, handle both cases, some do it without providing tokens
@@ -60,6 +60,7 @@ pub enum OperationType {
     },
 }
 
+//TODO: probably need also to add Pool Type, V2, V3, DLMM
 #[derive(Debug)]
 pub struct DecodedInstruction {
     pub pool_address: Pubkey,

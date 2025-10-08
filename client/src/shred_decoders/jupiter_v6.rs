@@ -21,7 +21,9 @@ impl TargetTransaction for JupiterV6TargetTransaction {
             "JupiterV6TargetTransaction does not support decode"
         ))
     }
+}
 
+impl JupiterV6TargetTransaction {
     fn decode_swap_instruction(
         &self,
         data: &[u8],

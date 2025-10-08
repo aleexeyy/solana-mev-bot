@@ -21,6 +21,7 @@ mod raydium_v2;
 mod raydium_v3;
 
 pub mod interfaces;
+pub mod utils;
 
 pub static RAYDIUM_V2_DECODER: raydium_v2::RaydiumV2TargetTransaction =
     raydium_v2::RaydiumV2TargetTransaction;
@@ -47,6 +48,7 @@ static DECODERS: Lazy<[&'static dyn TargetTransaction; 6]> = Lazy::new(|| {
 
 pub type DecodeJob = (usize, usize, usize, Arc<VersionedTransaction>, Program);
 
+//TODO: we dont handle when there are several DEXes in one transaction
 pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: Arc<Graph>) {
     // let stream = ReceiverStream::new(decode_rx);
     // let concurrency = num_cpus::get().max(1);
@@ -65,7 +67,7 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
             let mut decoded_err = 0usize;
 
             for (e_index, t_index, program_index, tx, program) in batch {
-                println!("{:?}", tx);
+                // println!("{:?}", tx);
 
                 let idx = program.index();
 

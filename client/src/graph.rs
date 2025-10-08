@@ -38,8 +38,8 @@ pub struct Edge {
     pool_type: PoolType,
     dex: DexType,
     tick_spacing: u64,
-    token_vault_lowest: Pubkey,  // lowest index
-    token_vault_highest: Pubkey, // highest index
+    pub token_vault_lowest: Pubkey,  // lowest index
+    pub token_vault_highest: Pubkey, // highest index
     config: Pubkey,
     pub node_lowest: usize,
     pub node_highest: usize,
