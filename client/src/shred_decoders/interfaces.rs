@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::graph::Graph;
 
 pub trait TargetTransaction: Sync + Send {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         graph: &Arc<Graph>,
-    ) -> anyhow::Result<DecodedTransaction>;
+    ) -> anyhow::Result<DecodedInstruction>;
 
     // fn decode_swap_instruction(
     //     &self,
@@ -37,7 +38,6 @@ pub trait TargetTransaction: Sync + Send {
     // ) -> anyhow::Result<DecodedInstruction>;
 }
 
-// TODO: some DEXes write token_in and token_out, others just write if the swap is_direct, handle both cases, some do it without providing tokens
 #[derive(Debug)]
 pub enum OperationType {
     SwapExactInput {
@@ -64,10 +64,8 @@ pub enum OperationType {
 #[derive(Debug)]
 pub struct DecodedInstruction {
     pub pool_address: Pubkey,
-    pub token_in_address: Pubkey,  // also input token
-    pub token_out_address: Pubkey, // also output token
-    // pub token_in_vault: Pubkey,
-    // pub token_out_vault: Pubkey,
+    pub token_in_address: Pubkey,
+    pub token_out_address: Pubkey,
     pub operation_type: OperationType, // TODO: Check Operation Type and Adjust the Sign of change liquidity based on Operation Type
 }
 

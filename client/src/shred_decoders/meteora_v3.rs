@@ -1,16 +1,12 @@
-use std::{io::Read, str::FromStr, sync::Arc};
+use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::{
-    message::compiled_instruction::CompiledInstruction,
-    pubkey::{Pubkey, PubkeyError, bytes_are_curve_point},
-    transaction::VersionedTransaction,
-};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
     shred_decoders::{
-        DecodedTransaction, TargetTransaction,
+        TargetTransaction,
         interfaces::{DecodedInstruction, OperationType},
         utils::DecodingUtils,
     },
@@ -21,73 +17,45 @@ pub struct MeteoraV3TargetTransaction;
 impl TargetTransaction for MeteoraV3TargetTransaction {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         graph: &Arc<Graph>,
-    ) -> Result<DecodedTransaction> {
-        let target_instructions: Vec<&CompiledInstruction> = transaction
-            .message
-            .instructions()
-            .iter()
-            .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
-            .collect();
+    ) -> Result<DecodedInstruction> {
+        let mut reader = data;
+        let mut instruction_type = [0u8; 8];
+        reader.read_exact(&mut instruction_type)?;
 
-        if target_instructions.len() == 0 {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let account_keys = transaction.message.static_account_keys();
-        let mut decoded_instructions: Vec<DecodedInstruction> =
-            Vec::with_capacity(target_instructions.len());
-
-        for instruction in target_instructions {
-            let data = &instruction.data;
-            let accounts = &instruction.accounts;
-
-            let mut reader = data.as_slice();
-            let mut instruction_type = [0u8; 8];
-            reader.read_exact(&mut instruction_type)?;
-
-            let decoded_instruction = match instruction_type {
-                SWAP => self.decode_swap_instruction(reader, accounts, account_keys, graph),
-                ADD_LIQUIDITY => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                REMOVE_LIQUIDITY => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                REMOVE_ALL_LIQUIDITY => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                CLAIM_FEES => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                CREATE_POOL => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                CREATE_POOL_2 => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                FILTER_2 => {
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-                _ => {
-                    tracing::warn!("Unsupported instruction type {:?}", instruction_type);
-                    tracing::warn!("Transaction on MeteoraV3 {:?}", &transaction);
-                    return Err(anyhow!("Unsupported swap instruction type"));
-                }
-            }?;
-            decoded_instructions.push(decoded_instruction);
-        }
-
-        if decoded_instructions.len() == 0 {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let decoded_transaction = DecodedTransaction {
-            instructions: decoded_instructions,
-        };
-        Ok(decoded_transaction)
+        let decoded_instruction = match instruction_type {
+            SWAP => self.decode_swap_instruction(reader, accounts, account_keys, graph),
+            ADD_LIQUIDITY => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            REMOVE_LIQUIDITY => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            REMOVE_ALL_LIQUIDITY => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            CLAIM_FEES => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            CREATE_POOL => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            CREATE_POOL_2 => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            FILTER_2 => {
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+            _ => {
+                tracing::warn!("Unsupported instruction type {:?}", instruction_type);
+                tracing::warn!("Transaction on MeteoraV3 {:?}", &data);
+                return Err(anyhow!("Unsupported swap instruction type"));
+            }
+        }?;
+        Ok(decoded_instruction)
     }
 }
 
@@ -100,7 +68,7 @@ impl MeteoraV3TargetTransaction {
         account_keys: &[Pubkey],
         _graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
-        if accounts.len() != SWAP_ACCOUNTS_LEN {
+        if accounts.len() < SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_ACCOUNTS_LEN, received {} | expected {}",
                 accounts.len(),
@@ -257,4 +225,4 @@ const CREATE_POOL: [u8; 8] = [95, 180, 10, 172, 84, 174, 232, 40];
 const CREATE_POOL_2: [u8; 8] = [20, 161, 241, 24, 189, 221, 180, 2];
 
 const SWAP: [u8; 8] = [248, 198, 158, 145, 225, 117, 135, 200];
-const SWAP_ACCOUNTS_LEN: usize = 14;
+const SWAP_ACCOUNTS_LEN: usize = 9;

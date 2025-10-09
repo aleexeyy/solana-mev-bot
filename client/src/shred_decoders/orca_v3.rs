@@ -1,15 +1,12 @@
 use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::{
-    message::compiled_instruction::CompiledInstruction, pubkey::Pubkey,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
     shred_decoders::{
-        DecodedTransaction, TargetTransaction,
+        TargetTransaction,
         interfaces::{DecodedInstruction, OperationType},
     },
 };
@@ -19,57 +16,29 @@ pub struct OrcaV3TargetTransaction;
 impl TargetTransaction for OrcaV3TargetTransaction {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         graph: &Arc<Graph>,
-    ) -> Result<DecodedTransaction> {
-        let target_instructions: Vec<&CompiledInstruction> = transaction
-            .message
-            .instructions()
-            .iter()
-            .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
-            .collect();
+    ) -> Result<DecodedInstruction> {
+        let mut reader = data;
+        let mut instruction_type = [0u8; 8];
+        reader.read_exact(&mut instruction_type)?;
 
-        if target_instructions.is_empty() {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let account_keys = transaction.message.static_account_keys();
-        let mut decoded_instructions: Vec<DecodedInstruction> =
-            Vec::with_capacity(target_instructions.len());
-
-        for instruction in target_instructions {
-            let data = &instruction.data;
-            let accounts = &instruction.accounts;
-
-            let mut reader = data.as_slice();
-            let mut instruction_type = [0u8; 8];
-            reader.read_exact(&mut instruction_type)?;
-
-            let decoded_instruction = match instruction_type {
-                SWAP_V1 => self.decode_swap_v1_instruction(reader, accounts, account_keys, graph),
-                SWAP_V2 => self.decode_swap_v2_instruction(reader, accounts, account_keys),
-                // REMOVE_LIQUIDITY => {
-                //     self.decode_remove_liquidity_instruction(reader, accounts, account_keys, graph)
-                // }
-                // ADD_LIQUIDITY => {
-                //     self.decode_add_liquidity_instruction(reader, accounts, account_keys, graph)
-                // }
-                _ => {
-                    return Err(anyhow!("Unsupported swap instruction type on OrcaV3"));
-                }
-            }?;
-            decoded_instructions.push(decoded_instruction);
-        }
-
-        if decoded_instructions.is_empty() {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let decoded_transaction = DecodedTransaction {
-            instructions: decoded_instructions,
-        };
-        Ok(decoded_transaction)
+        let decoded_instruction = match instruction_type {
+            SWAP_V1 => self.decode_swap_v1_instruction(reader, accounts, account_keys, graph),
+            SWAP_V2 => self.decode_swap_v2_instruction(reader, accounts, account_keys),
+            // REMOVE_LIQUIDITY => {
+            //     return Err(anyhow!("Unsupported swap instruction type on OrcaV3"));
+            // }
+            // ADD_LIQUIDITY => {
+            //     return Err(anyhow!("Unsupported swap instruction type on OrcaV3"));
+            // }
+            _ => {
+                return Err(anyhow!("Unsupported swap instruction type on OrcaV3"));
+            }
+        }?;
+        Ok(decoded_instruction)
     }
 }
 
@@ -82,7 +51,7 @@ impl OrcaV3TargetTransaction {
         account_keys: &[Pubkey],
         graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
-        if accounts.len() != SWAP_V1_ACCOUNTS_LEN {
+        if accounts.len() < SWAP_V1_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_V1_ACCOUNTS_LEN, received {} | expected {}",
                 accounts.len(),
@@ -152,7 +121,7 @@ impl OrcaV3TargetTransaction {
         accounts: &[u8],
         account_keys: &[Pubkey],
     ) -> Result<DecodedInstruction> {
-        if accounts.len() != SWAP_V2_ACCOUNTS_LEN {
+        if accounts.len() < SWAP_V2_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_V1_ACCOUNTS_LEN, received {} | expected {}",
                 accounts.len(),
@@ -223,7 +192,7 @@ impl OrcaV3TargetTransaction {
         Err(anyhow!("Unsupported instructions"))
     }
 
-    // example: https://solscan.io/tx/4cmEUnyynF1azoebnYcoY6SE2qigF7kb6QQu7ekZwmpkHfJVQnmXLDZJHDZGaoLKLhhU8MC2ubtZ3RzNTby34xYo
+    // example: https://solscan.io/tx/2G1ymxnJ6SCZgZJeQ1YnWMvGP6aufq2PiNWz7mVxtjUDGuqsjYUmKdfTAQ4S3cpGNVLuuEFmx51PBxcF8WX7ApEs
     fn decode_add_liquidity_instruction(
         &self,
         data: &[u8],
@@ -237,10 +206,10 @@ impl OrcaV3TargetTransaction {
 }
 
 const SWAP_V1: [u8; 8] = [248, 198, 158, 145, 225, 117, 135, 200];
-const SWAP_V1_ACCOUNTS_LEN: usize = 16;
+const SWAP_V1_ACCOUNTS_LEN: usize = 3;
 
 const SWAP_V2: [u8; 8] = [43, 4, 237, 11, 26, 201, 30, 98];
-const SWAP_V2_ACCOUNTS_LEN: usize = 15;
+const SWAP_V2_ACCOUNTS_LEN: usize = 7;
 
 const REMOVE_LIQUIDITY: [u8; 8] = [2, 13, 19, 20, 0, 3, 4, 17];
 const REMOVE_LIQUIDITY_ACCOUNTS_LEN: usize = 15;

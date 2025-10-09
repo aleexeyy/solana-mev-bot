@@ -16,8 +16,8 @@ impl DecodingUtils {
             Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
 
         Self::find_token_account_address_and_bump_seed_internal(
-            &owner,
-            &token_mint_address,
+            owner,
+            token_mint_address,
             &token_program_address,
             &program_address,
         )
@@ -36,7 +36,7 @@ impl DecodingUtils {
                 &token_program_address.to_bytes(),
                 &token_mint_address.to_bytes(),
             ],
-            &program_address,
+            program_address,
         )
         .unwrap_or_else(|| core::panic!("Unable to find a viable program address bump seed"))
     }

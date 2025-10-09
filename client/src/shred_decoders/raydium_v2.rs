@@ -1,15 +1,12 @@
 use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::{
-    message::compiled_instruction::CompiledInstruction, pubkey::Pubkey,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
     shred_decoders::{
-        DecodedTransaction, TargetTransaction,
+        TargetTransaction,
         interfaces::{DecodedInstruction, OperationType},
     },
 };
@@ -19,53 +16,24 @@ pub struct RaydiumV2TargetTransaction;
 impl TargetTransaction for RaydiumV2TargetTransaction {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         _graph: &Arc<Graph>,
-    ) -> Result<DecodedTransaction> {
-        let target_instructions: Vec<&CompiledInstruction> = transaction
-            .message
-            .instructions()
-            .iter()
-            .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
-            .collect();
+    ) -> Result<DecodedInstruction> {
+        let mut reader = data;
+        let mut instruction_type = [0u8; 8];
+        reader.read_exact(&mut instruction_type)?;
 
-        if target_instructions.is_empty() {
-            return Err(anyhow!("Unsupported instructions"));
-        }
+        let decoded_instruction = match instruction_type {
+            SWAP_EXACT_IN => self.decode_swap_instruction(reader, accounts, account_keys, true),
+            SWAP_EXACT_OUT => self.decode_swap_instruction(reader, accounts, account_keys, false),
+            _ => {
+                return Err(anyhow!("Unsupported swap instruction type on RaydiumV2"));
+            }
+        }?;
 
-        let account_keys = transaction.message.static_account_keys();
-        let mut decoded_instructions: Vec<DecodedInstruction> =
-            Vec::with_capacity(target_instructions.len());
-
-        for instruction in target_instructions {
-            let data = &instruction.data;
-            let accounts = &instruction.accounts;
-
-            let mut reader = data.as_slice();
-            let mut instruction_type = [0u8; 8];
-            reader.read_exact(&mut instruction_type)?;
-
-            let decoded_instruction = match instruction_type {
-                SWAP_EXACT_IN => self.decode_swap_instruction(reader, accounts, account_keys, true),
-                SWAP_EXACT_OUT => {
-                    self.decode_swap_instruction(reader, accounts, account_keys, false)
-                }
-                _ => {
-                    return Err(anyhow!("Unsupported swap instruction type on RaydiumV2"));
-                }
-            }?;
-            decoded_instructions.push(decoded_instruction);
-        }
-
-        if decoded_instructions.is_empty() {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let decoded_transaction = DecodedTransaction {
-            instructions: decoded_instructions,
-        };
-        Ok(decoded_transaction)
+        Ok(decoded_instruction)
     }
 }
 
@@ -79,7 +47,7 @@ impl RaydiumV2TargetTransaction {
         account_keys: &[Pubkey],
         is_exact_in: bool,
     ) -> Result<DecodedInstruction> {
-        if accounts.len() != SWAP_ACCOUNTS_LEN {
+        if accounts.len() < SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_ACCOUNTS_LEN, received {} | expected {}",
                 accounts.len(),
@@ -174,7 +142,7 @@ impl RaydiumV2TargetTransaction {
 const SWAP_EXACT_OUT: [u8; 8] = [55, 217, 98, 86, 163, 74, 180, 173];
 
 const SWAP_EXACT_IN: [u8; 8] = [143, 190, 90, 218, 196, 30, 51, 222];
-const SWAP_ACCOUNTS_LEN: usize = 13;
+const SWAP_ACCOUNTS_LEN: usize = 12;
 
 const ADD_LIQUIDITY: [u8; 8] = [77, 255, 174, 82, 125, 29, 201, 46];
 const ADD_LIQUIDITY_ACCOUNTS_LEN: usize = 20;

@@ -1,15 +1,12 @@
 use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::{
-    message::compiled_instruction::CompiledInstruction, pubkey::Pubkey,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
     shred_decoders::{
-        DecodedTransaction, TargetTransaction,
+        TargetTransaction,
         interfaces::{DecodedInstruction, OperationType},
         utils::DecodingUtils,
     },
@@ -20,59 +17,28 @@ pub struct MeteoraV2TargetTransaction;
 impl TargetTransaction for MeteoraV2TargetTransaction {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         graph: &Arc<Graph>,
-    ) -> Result<DecodedTransaction> {
-        let target_instructions: Vec<&CompiledInstruction> = transaction
-            .message
-            .instructions()
-            .iter()
-            .filter(|instruction| usize::from(instruction.program_id_index) == program_index)
-            .collect();
+    ) -> Result<DecodedInstruction> {
+        let mut reader = data;
+        let mut instruction_type = [0u8; 8];
+        reader.read_exact(&mut instruction_type)?;
 
-        if target_instructions.len() == 0 {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let account_keys = transaction.message.static_account_keys();
-
-        let mut decoded_instructions = Vec::with_capacity(target_instructions.len());
-
-        for instruction in target_instructions {
-            let data = &instruction.data;
-            let accounts = &instruction.accounts;
-
-            let mut reader = data.as_slice();
-            let mut instruction_type = [0u8; 8];
-            reader.read_exact(&mut instruction_type)?;
-
-            let decoded_instruction = match instruction_type {
-                SWAP => self.decode_swap_instruction(data, accounts, account_keys, graph),
-                REMOVE_LIQUIDITY_SINGLE_SIDE => Err(anyhow!("Unsupported instruction type")),
-                ADD_IMBALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
-                REMOVE_BALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
-                ADD_BALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
-                CLAIM_FEES => Err(anyhow!("Unsupported instruction type")),
-                _ => {
-                    tracing::warn!("Unhandled instruction type {:?}", instruction_type);
-                    tracing::warn!("Transaction on MeteoraV2 {:?}", &transaction);
-                    Err(anyhow!("Unsupported instruction type"))
-                }
-            }?;
-
-            decoded_instructions.push(decoded_instruction);
-        }
-
-        if decoded_instructions.len() == 0 {
-            return Err(anyhow!("Unsupported instructions"));
-        }
-
-        let decoded_transaction = DecodedTransaction {
-            instructions: decoded_instructions,
-        };
-
-        Ok(decoded_transaction)
+        let decoded_instruction = match instruction_type {
+            SWAP => self.decode_swap_instruction(data, accounts, account_keys, graph),
+            REMOVE_LIQUIDITY_SINGLE_SIDE => Err(anyhow!("Unsupported instruction type")),
+            ADD_IMBALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
+            REMOVE_BALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
+            ADD_BALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
+            _ => {
+                tracing::warn!("Unhandled instruction type {:?}", instruction_type);
+                tracing::warn!("Transaction on MeteoraV2 {:?}", &data);
+                Err(anyhow!("Unsupported instruction type"))
+            }
+        }?;
+        Ok(decoded_instruction)
     }
 }
 
@@ -85,7 +51,7 @@ impl MeteoraV2TargetTransaction {
         account_keys: &[Pubkey],
         graph: &Arc<Graph>,
     ) -> Result<DecodedInstruction> {
-        if accounts.len() != SWAP_ACCOUNTS_LEN {
+        if accounts.len() < SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_ACCOUNTS_LEN, received {} | expected {}",
                 accounts.len(),
@@ -229,7 +195,7 @@ impl MeteoraV2TargetTransaction {
 }
 
 const SWAP: [u8; 8] = [248, 198, 158, 145, 225, 117, 135, 200];
-const SWAP_ACCOUNTS_LEN: usize = 15;
+const SWAP_ACCOUNTS_LEN: usize = 13;
 
 const REMOVE_LIQUIDITY_SINGLE_SIDE: [u8; 8] = [84, 84, 177, 66, 254, 185, 10, 251];
 const REMOVE_LIQUIDITY_SINGLE_SIDE_ACCOUNTS_LEN: usize = 15;

@@ -10,7 +10,7 @@ pub enum Program {
     OrcaV3,
     MeteoraV3,
     MeteoraV2,
-    Jupiter,
+    // Jupiter,
 }
 
 impl Program {
@@ -21,17 +21,17 @@ impl Program {
             Program::OrcaV3 => 2,
             Program::MeteoraV3 => 3,
             Program::MeteoraV2 => 4,
-            Program::Jupiter => 5,
+            // Program::Jupiter => 5,
         }
     }
 }
 
-pub static PROGRAM_KEYS: Lazy<[(Program, Pubkey); 6]> = Lazy::new(|| {
+pub static PROGRAM_KEYS: Lazy<[(Program, Pubkey); 5]> = Lazy::new(|| {
     [
-        (
-            Program::Jupiter,
-            Pubkey::from_str("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4").unwrap(),
-        ),
+        // (
+        //     Program::Jupiter,
+        //     Pubkey::from_str("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4").unwrap(),
+        // ),
         (
             Program::RaydiumV2,
             Pubkey::from_str("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C").unwrap(),

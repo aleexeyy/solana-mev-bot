@@ -1,10 +1,9 @@
-use std::{env, fs::read_to_string, str::FromStr, sync::Arc, time::Instant};
+use std::{env, fs::read_to_string, sync::Arc, time::Instant};
 
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use client::{
-    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders,
-    shred_decoders::{DecodeJob, meteora_v3::MeteoraV3TargetTransaction},
+    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders, shred_decoders::DecodeJob,
 };
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;

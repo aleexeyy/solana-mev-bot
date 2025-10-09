@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
-    shred_decoders::{DecodedTransaction, TargetTransaction, interfaces::DecodedInstruction},
+    shred_decoders::{TargetTransaction, interfaces::DecodedInstruction},
 };
 
 pub struct JupiterV6TargetTransaction;
@@ -13,10 +13,11 @@ pub struct JupiterV6TargetTransaction;
 impl TargetTransaction for JupiterV6TargetTransaction {
     fn decode(
         &self,
-        transaction: &VersionedTransaction,
-        program_index: usize,
+        account_keys: &Arc<[Pubkey]>,
+        accounts: &[u8],
+        data: &[u8],
         graph: &Arc<Graph>,
-    ) -> Result<DecodedTransaction> {
+    ) -> Result<DecodedInstruction> {
         Err(anyhow!(
             "JupiterV6TargetTransaction does not support decode"
         ))

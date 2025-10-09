@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::{read_dir, read_to_string},
+    fs::read_to_string,
     str::FromStr,
     sync::{
         Arc,
@@ -246,15 +246,15 @@ impl Graph {
     }
 
     pub fn update_edge(&mut self, address: &Pubkey, data: PoolUpdate) -> Result<()> {
-        if let Some(&edge_index) = self.address_to_edge.get(address) {
-            if let Some(edge) = self.edges.get(edge_index) {
-                edge.liquidity.store(data.new_liquidity, Ordering::Relaxed);
-                edge.sqrt_price
-                    .store(data.new_sqrt_price, Ordering::Relaxed);
-                edge.current_tick_index
-                    .store(data.new_current_tick_index, Ordering::Relaxed);
-                return Ok(());
-            }
+        if let Some(&edge_index) = self.address_to_edge.get(address)
+            && let Some(edge) = self.edges.get(edge_index)
+        {
+            edge.liquidity.store(data.new_liquidity, Ordering::Relaxed);
+            edge.sqrt_price
+                .store(data.new_sqrt_price, Ordering::Relaxed);
+            edge.current_tick_index
+                .store(data.new_current_tick_index, Ordering::Relaxed);
+            return Ok(());
         }
         Err(anyhow!("Edge with address {} doesn't exist", address))
     }

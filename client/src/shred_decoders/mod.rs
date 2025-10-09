@@ -3,7 +3,7 @@ use std::sync::Arc;
 // use futures::StreamExt;
 // use num_cpus;
 use once_cell::sync::Lazy;
-use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use tokio::{sync::mpsc::Receiver, task};
 
 use crate::shred_decoders::interfaces::{DecodedTransaction, TargetTransaction};
@@ -35,25 +35,32 @@ pub static METEORA_V2_DECODER: meteora_v2::MeteoraV2TargetTransaction =
 pub static JUPITER_V6_DECODER: jupiter_v6::JupiterV6TargetTransaction =
     jupiter_v6::JupiterV6TargetTransaction;
 
-static DECODERS: Lazy<[&'static dyn TargetTransaction; 6]> = Lazy::new(|| {
+static DECODERS: Lazy<[&'static dyn TargetTransaction; 5]> = Lazy::new(|| {
     [
         &RAYDIUM_V2_DECODER,
         &RAYDIUM_V3_DECODER,
         &ORCA_V3_DECODER,
         &METEORA_V3_DECODER,
         &METEORA_V2_DECODER,
-        &JUPITER_V6_DECODER,
+        // &JUPITER_V6_DECODER,
     ]
 });
 
-pub type DecodeJob = (usize, usize, usize, Arc<VersionedTransaction>, Program);
+pub struct InstructionData {
+    pub program: Program,
+    pub accounts: Vec<u8>,
+    pub data: Vec<u8>,
+}
 
-//TODO: we dont handle when there are several DEXes in one transaction
+pub struct DecodeJob {
+    pub transaction_address: Signature,
+    pub account_keys: Arc<[Pubkey]>,
+    pub instructions: Vec<InstructionData>,
+}
+
+//TODO: implement decoding logic also for adding and removing liquidity(sometimes they do create an arbitrage opportunity)
+//TODO: implement Lookup table check in case of index out of bounds
 pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: Arc<Graph>) {
-    // let stream = ReceiverStream::new(decode_rx);
-    // let concurrency = num_cpus::get().max(1);
-    //
-    // stream.for_each_concurrent(concurrency, |batch: Vec<DecodeJob>| async move {
     while let Some(batch) = decode_rx.recv().await {
         let batch_size = batch.len();
 
@@ -63,37 +70,56 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
         let graph = Arc::clone(&graph);
 
         let res = task::spawn_blocking(move || {
-            let mut decoded_ok = 0usize;
-            let mut decoded_err = 0usize;
+            let mut per_tx_counts = Vec::with_capacity(batch.len());
 
-            for (e_index, t_index, program_index, tx, program) in batch {
-                // println!("{:?}", tx);
+            for DecodeJob {
+                transaction_address,
+                account_keys,
+                instructions,
+            } in batch
+            {
+                let mut decoded_ok = 0usize;
+                let mut decoded_err = 0usize;
 
-                let idx = program.index();
+                for instruction in instructions {
+                    let idx = instruction.program.index();
 
-                match DECODERS[idx].decode(&*tx, program_index, &graph) {
-                    Ok(_decoded) => decoded_ok += 1,
-                    Err(_) => decoded_err += 1,
+                    let data_slice: &[u8] = instruction.data.as_slice();
+                    let accounts_slice: &[u8] = instruction.accounts.as_slice();
+
+                    match DECODERS[idx].decode(&account_keys, accounts_slice, data_slice, &graph) {
+                        Ok(_) => decoded_ok += 1,
+                        Err(err) => {
+                            tracing::error!("{:?}: {:?}", transaction_address, err);
+                            tracing::error!("Instruction Data: {:?}", &instruction.data);
+                            decoded_err += 1
+                        }
+                    }
                 }
+
+                per_tx_counts.push((transaction_address, decoded_ok, decoded_err));
             }
-            (decoded_ok, decoded_err)
+
+            per_tx_counts
         })
         .await;
-        match res {
-            Ok((ok, err)) => {
-                let processed = ok + err;
-                tracing::info!(
-                    batch_size = batch_size,
-                    processed = processed,
-                    ok = ok,
-                    err = err,
-                    "decoded batch results"
-                );
-            }
-            Err(join_err) => {
-                tracing::error!("spawn_blocking panicked: {:?}", join_err);
-            }
-        }
+
+        // match res {
+        //     Ok(per_tx_counts) => {
+        //         for (tx_address, ok, err) in per_tx_counts.into_iter() {
+        //             let processed = ok + err;
+        //             tracing::info!(
+        //                 processed = processed,
+        //                 ok = ok,
+        //                 err = err,
+        //                 "decoded transaction results"
+        //             );
+        //         }
+        //     }
+        //     Err(err) => {
+        //         tracing::error!("Error during decoding: {:?}", err);
+        //     }
+        // }
 
         let total_wall = t0.elapsed();
         let total_cpu = get_cpu_time() - before_cpu;
@@ -102,9 +128,7 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
             batch_size = batch_size,
             wall = ?total_wall,
             cpu_total = ?total_cpu,
-            "decode timing"
+            "decode batch timing"
         );
     }
-    // })
-    // .await;
 }
