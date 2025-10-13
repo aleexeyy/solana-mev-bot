@@ -3,7 +3,8 @@ use std::{env, fs::read_to_string, sync::Arc, time::Instant};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use client::{
-    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders, shred_decoders::DecodeJob,
+    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders,
+    shred_decoders::{get_lookup_tables, interfaces::DecodeJob},
 };
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
@@ -53,6 +54,8 @@ async fn main() -> Result<()> {
     // panic!("Test Panic!!!");
     let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
     graph.build_cycles(4)?;
+
+    let _ = get_lookup_tables();
 
     let graph = Arc::new(ArcSwap::new(Arc::new(graph)));
 

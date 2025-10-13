@@ -8,7 +8,7 @@ client/target/
 
 # Local data
 client/cached-blockchain-data/
-client/src/alts.json
+client/src/shred_decoders/alts.json
 
 
 .env

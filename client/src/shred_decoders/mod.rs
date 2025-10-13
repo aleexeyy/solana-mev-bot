@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    fs,
+    sync::{Arc, OnceLock},
+};
 
 // use futures::StreamExt;
 // use num_cpus;
@@ -6,7 +10,7 @@ use once_cell::sync::Lazy;
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use tokio::{sync::mpsc::Receiver, task};
 
-use crate::shred_decoders::interfaces::{DecodedTransaction, TargetTransaction};
+use crate::shred_decoders::interfaces::{DecodeJob, RawLookupTables, TargetTransaction};
 // use tokio_stream::wrappers::ReceiverStream;
 use crate::{
     benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph, target_dexes::Program,
@@ -46,16 +50,47 @@ static DECODERS: Lazy<[&'static dyn TargetTransaction; 5]> = Lazy::new(|| {
     ]
 });
 
-pub struct InstructionData {
-    pub program: Program,
-    pub accounts: Vec<u8>,
-    pub data: Vec<u8>,
+static LOOKUP_TABLES: OnceLock<HashMap<Pubkey, Arc<[Pubkey]>>> = OnceLock::new();
+
+pub fn get_lookup_tables() -> &'static HashMap<Pubkey, Arc<[Pubkey]>> {
+    LOOKUP_TABLES.get_or_init(|| {
+        // Adjust the path to your JSON file
+        let json_bytes =
+            fs::read("./client/src/shred_decoders/alts.json").expect("Failed to read alts.json");
+
+        let raw: RawLookupTables =
+            serde_json::from_slice(&json_bytes).expect("Failed to parse lookup tables JSON");
+
+        // Convert raw map into optimized map
+        let mut map = HashMap::with_capacity(raw.len());
+        for (lt_addr_str, addrs_str_vec) in raw {
+            let lt_addr = lt_addr_str
+                .parse::<Pubkey>()
+                .unwrap_or_else(|e| panic!("Bad lookup table address '{}': {:?}", lt_addr_str, e));
+
+            // Convert each stored string to Pubkey
+            let mut v: Vec<Pubkey> = Vec::with_capacity(addrs_str_vec.len());
+            for s in addrs_str_vec {
+                let pk = s.parse::<Pubkey>().unwrap_or_else(|e| {
+                    panic!(
+                        "Bad stored address in lookup table {}: '{}' -> {:?}",
+                        lt_addr_str, s, e
+                    )
+                });
+                v.push(pk);
+            }
+
+            // Convert Vec<Pubkey> to Arc<[Pubkey]>
+            let arc_slice: Arc<[Pubkey]> = Arc::from(v.into_boxed_slice());
+            map.insert(lt_addr, arc_slice);
+        }
+
+        map
+    })
 }
 
-pub struct DecodeJob {
-    pub transaction_address: Signature,
-    pub account_keys: Arc<[Pubkey]>,
-    pub instructions: Vec<InstructionData>,
+pub fn lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
+    get_lookup_tables().get(lt)
 }
 
 //TODO: implement decoding logic also for adding and removing liquidity(sometimes they do create an arbitrage opportunity)
@@ -75,6 +110,7 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
             for DecodeJob {
                 transaction_address,
                 account_keys,
+                lookup_tables,
                 instructions,
             } in batch
             {
@@ -84,8 +120,8 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
                 for instruction in instructions {
                     let idx = instruction.program.index();
 
-                    let data_slice: &[u8] = instruction.data.as_slice();
-                    let accounts_slice: &[u8] = instruction.accounts.as_slice();
+                    let data_slice: &[u8] = &*instruction.data;
+                    let accounts_slice: &[u8] = &*instruction.accounts;
 
                     match DECODERS[idx].decode(&account_keys, accounts_slice, data_slice, &graph) {
                         Ok(_) => decoded_ok += 1,

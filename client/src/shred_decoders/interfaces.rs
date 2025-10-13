@@ -1,8 +1,41 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{message::v0::MessageAddressTableLookup, pubkey::Pubkey, signature::Signature};
 
-use crate::graph::Graph;
+use crate::{graph::Graph, target_dexes::Program};
+
+pub type RawLookupTables = HashMap<String, Vec<String>>;
+
+pub struct ReducedLookupTable {
+    pub account_key: Pubkey,
+    pub indexes: Arc<[u8]>,
+}
+
+impl Default for ReducedLookupTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl ReducedLookupTable {
+    pub fn new() -> Self {
+        ReducedLookupTable {
+            account_key: Pubkey::default(),
+            indexes: Arc::default(),
+        }
+    }
+}
+pub struct InstructionData {
+    pub program: Program,
+    pub accounts: Arc<[u8]>,
+    pub data: Arc<[u8]>,
+}
+
+pub struct DecodeJob {
+    pub transaction_address: Signature,
+    pub account_keys: Arc<[Pubkey]>,
+    pub lookup_tables: Arc<Vec<ReducedLookupTable>>,
+    pub instructions: Vec<InstructionData>,
+}
 
 pub trait TargetTransaction: Sync + Send {
     fn decode(

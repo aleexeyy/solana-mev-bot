@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env, sync::Arc, vec};
 
 use anyhow::Result;
 use dotenvy::dotenv;
@@ -6,11 +6,11 @@ use jito_protos::shredstream::{
     SubscribeEntriesRequest, shredstream_proxy_client::ShredstreamProxyClient,
 };
 use solana_entry::entry::Entry;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, transaction::TransactionVersion};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    shred_decoders::{DecodeJob, InstructionData},
+    shred_decoders::interfaces::{DecodeJob, InstructionData, ReducedLookupTable},
     target_dexes::match_program,
 };
 
@@ -47,7 +47,7 @@ pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
 
     for entry in entries.iter() {
         for tx in entry.transactions.iter() {
-            let account_keys: Arc<[Pubkey]> = Arc::from(tx.message.static_account_keys().to_vec());
+            let account_keys: Arc<[Pubkey]> = Arc::from(tx.message.static_account_keys());
             let mut instructions = Vec::new();
 
             for instruction in tx.message.instructions() {
@@ -57,69 +57,51 @@ pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
                 if let Some(program) = match_program(program_key) {
                     instructions.push(InstructionData {
                         program,
-                        accounts: instruction.accounts.clone(),
-                        data: instruction.data.clone(),
+                        accounts: Arc::from(instruction.accounts.as_slice()),
+                        data: Arc::from(instruction.data.as_slice()),
                     });
                 }
+
+                // if tx.version() == TransactionVersion::Number(0) {
+                //     println!("Transaction: {:?}", tx);
+                // }
             }
 
             if !instructions.is_empty() {
-                jobs.push(DecodeJob {
-                    transaction_address: tx.signatures[0],
-                    account_keys,
-                    instructions,
-                });
+                if let Some(lookup_tables) = tx.message.address_table_lookups() {
+                    jobs.push(DecodeJob {
+                        transaction_address: tx.signatures[0],
+                        account_keys,
+                        lookup_tables: Arc::new(
+                            lookup_tables
+                                .iter()
+                                .map(|table| {
+                                    let mut combined = Vec::with_capacity(
+                                        table.writable_indexes.len() + table.readonly_indexes.len(),
+                                    );
+                                    combined.extend_from_slice(&table.writable_indexes);
+                                    combined.extend_from_slice(&table.readonly_indexes);
+                                    let indexes: Arc<[u8]> = Arc::from(combined);
+                                    ReducedLookupTable {
+                                        account_key: table.account_key,
+                                        indexes,
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        instructions,
+                    });
+                } else {
+                    jobs.push(DecodeJob {
+                        transaction_address: tx.signatures[0],
+                        account_keys,
+                        lookup_tables: Arc::new(vec![ReducedLookupTable::default()]),
+                        instructions,
+                    });
+                }
             }
         }
     }
 
     jobs
 }
-
-//
-// pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
-//     let matches: Vec<DecodeJob> = entries
-//         .iter()
-//         .enumerate()
-//         .flat_map(|(e_index, entry)| {
-//             entry
-//                 .transactions
-//                 .iter()
-//                 .enumerate()
-//                 .filter_map(move |(t_index, tx)| {
-//                     let mut first_non_jupiter: Option<(usize, Program)> = None;
-//
-//                     for (program_index, account_key) in
-//                         tx.message.static_account_keys().iter().enumerate()
-//                     {
-//                         if let Some(program) = match_program(account_key) {
-//                             if program == Program::Jupiter {
-//                                 return Some((
-//                                     e_index,
-//                                     t_index,
-//                                     program_index,
-//                                     Arc::new(tx.clone()),
-//                                     program,
-//                                 ));
-//                             }
-//
-//                             if first_non_jupiter.is_none() {
-//                                 first_non_jupiter = Some((program_index, program));
-//                             }
-//                         }
-//                     }
-//                     first_non_jupiter.map(|(program_index, program)| {
-//                         (
-//                             e_index,
-//                             t_index,
-//                             program_index,
-//                             Arc::new(tx.clone()),
-//                             program,
-//                         )
-//                     })
-//                 })
-//         })
-//         .collect();
-//
-//     matches
-// }
