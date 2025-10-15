@@ -7,14 +7,12 @@ use std::{
 // use futures::StreamExt;
 // use num_cpus;
 use once_cell::sync::Lazy;
-use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use solana_sdk::pubkey::Pubkey;
 use tokio::{sync::mpsc::Receiver, task};
 
 use crate::shred_decoders::interfaces::{DecodeJob, RawLookupTables, TargetTransaction};
 // use tokio_stream::wrappers::ReceiverStream;
-use crate::{
-    benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph, target_dexes::Program,
-};
+use crate::{benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph};
 
 mod jupiter_v6;
 mod meteora_dlmm;
@@ -89,7 +87,7 @@ pub fn get_lookup_tables() -> &'static HashMap<Pubkey, Arc<[Pubkey]>> {
     })
 }
 
-pub fn lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
+pub fn get_lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
     get_lookup_tables().get(lt)
 }
 
@@ -120,10 +118,16 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
                 for instruction in instructions {
                     let idx = instruction.program.index();
 
-                    let data_slice: &[u8] = &*instruction.data;
-                    let accounts_slice: &[u8] = &*instruction.accounts;
+                    let data_slice: &[u8] = &instruction.data;
+                    let accounts_slice: &[u8] = &instruction.accounts;
 
-                    match DECODERS[idx].decode(&account_keys, accounts_slice, data_slice, &graph) {
+                    match DECODERS[idx].decode(
+                        &account_keys,
+                        accounts_slice,
+                        data_slice,
+                        &graph,
+                        &lookup_tables,
+                    ) {
                         Ok(_) => decoded_ok += 1,
                         Err(err) => {
                             tracing::error!("{:?}: {:?}", transaction_address, err);

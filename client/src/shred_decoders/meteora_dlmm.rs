@@ -5,7 +5,10 @@ use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     graph::Graph,
-    shred_decoders::{TargetTransaction, interfaces::DecodedInstruction},
+    shred_decoders::{
+        TargetTransaction,
+        interfaces::{DecodedInstruction, ReducedLookupTable},
+    },
 };
 
 pub struct MeteoraDLMMTargetTransaction;
@@ -17,6 +20,7 @@ impl TargetTransaction for MeteoraDLMMTargetTransaction {
         accounts: &[u8],
         data: &[u8],
         graph: &Arc<Graph>,
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         Err(anyhow!(
             "MeteoraDLMMTargetTransaction does not support decode"

@@ -6,7 +6,7 @@ use jito_protos::shredstream::{
     SubscribeEntriesRequest, shredstream_proxy_client::ShredstreamProxyClient,
 };
 use solana_entry::entry::Entry;
-use solana_sdk::{pubkey::Pubkey, transaction::TransactionVersion};
+use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc::Sender;
 
 use crate::{

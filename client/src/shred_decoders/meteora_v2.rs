@@ -7,7 +7,7 @@ use crate::{
     graph::Graph,
     shred_decoders::{
         TargetTransaction,
-        interfaces::{DecodedInstruction, OperationType},
+        interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
         utils::DecodingUtils,
     },
 };
@@ -21,13 +21,16 @@ impl TargetTransaction for MeteoraV2TargetTransaction {
         accounts: &[u8],
         data: &[u8],
         graph: &Arc<Graph>,
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         let mut reader = data;
         let mut instruction_type = [0u8; 8];
         reader.read_exact(&mut instruction_type)?;
 
         let decoded_instruction = match instruction_type {
-            SWAP => self.decode_swap_instruction(data, accounts, account_keys, graph),
+            SWAP => {
+                self.decode_swap_instruction(data, accounts, account_keys, graph, lookup_tables)
+            }
             REMOVE_LIQUIDITY_SINGLE_SIDE => Err(anyhow!("Unsupported instruction type")),
             ADD_IMBALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
             REMOVE_BALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
@@ -50,6 +53,7 @@ impl MeteoraV2TargetTransaction {
         accounts: &[u8],
         account_keys: &[Pubkey],
         graph: &Arc<Graph>,
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         if accounts.len() < SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
@@ -58,18 +62,28 @@ impl MeteoraV2TargetTransaction {
                 SWAP_ACCOUNTS_LEN
             ));
         }
+        let pool_address_index = usize::from(accounts[0]);
+        let pool_address =
+            DecodingUtils::get_account_address(pool_address_index, account_keys, lookup_tables)?;
+        // let pool_address = *account_keys
+        //     .get(usize::from(accounts[0]))
+        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
-        let pool_address = *account_keys
-            .get(usize::from(accounts[0]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let token_in_account_address_index = usize::from(accounts[1]);
+        let token_in_account_address = DecodingUtils::get_account_address(
+            token_in_account_address_index,
+            account_keys,
+            lookup_tables,
+        )?;
+        // let token_in_account_address = *account_keys
+        //     .get(usize::from(accounts[1]))
+        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
-        let token_in_account_address = *account_keys
-            .get(usize::from(accounts[1]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-
-        let owner = *account_keys
-            .get(usize::from(accounts[12]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
+        let owner_index = usize::from(accounts[12]);
+        let owner = DecodingUtils::get_account_address(owner_index, account_keys, lookup_tables)?;
+        // let owner = *account_keys
+        //     .get(usize::from(accounts[12]))
+        //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
         let amount_in: u64 = u64::from_le_bytes(data[0..8].try_into()?);
         let minimum_amount_out: u64 = u64::from_le_bytes(data[8..16].try_into()?);

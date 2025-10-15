@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use solana_sdk::{message::v0::MessageAddressTableLookup, pubkey::Pubkey, signature::Signature};
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 use crate::{graph::Graph, target_dexes::Program};
 
@@ -44,6 +44,7 @@ pub trait TargetTransaction: Sync + Send {
         accounts: &[u8],
         data: &[u8],
         graph: &Arc<Graph>,
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> anyhow::Result<DecodedInstruction>;
 
     // fn decode_swap_instruction(

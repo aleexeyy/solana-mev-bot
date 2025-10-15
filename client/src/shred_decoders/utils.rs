@@ -1,6 +1,9 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
+use anyhow::anyhow;
 use solana_sdk::pubkey::{Pubkey, PubkeyError, bytes_are_curve_point};
+
+use crate::shred_decoders::{get_lookup_table_addresses, interfaces::ReducedLookupTable};
 
 const MAX_SEED_LEN: usize = 32;
 const MAX_SEEDS: usize = 16;
@@ -9,6 +12,36 @@ const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 pub struct DecodingUtils {}
 
 impl DecodingUtils {
+    pub fn get_account_address(
+        index: usize,
+        account_keys: &[Pubkey],
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
+    ) -> anyhow::Result<Pubkey> {
+        if index < account_keys.len() {
+            return Ok(account_keys[index]);
+        }
+        let mut address_index = index - account_keys.len();
+
+        for lookup_table in lookup_tables.iter() {
+            if address_index < lookup_table.indexes.len() {
+                if let Some(lookup_addresses) =
+                    get_lookup_table_addresses(&lookup_table.account_key)
+                {
+                    let idx = usize::from(lookup_table.indexes[address_index]);
+                    return Ok(lookup_addresses[idx]);
+                } else {
+                    return Err(anyhow!(
+                        "Unsupported lookup table: {}",
+                        lookup_table.account_key
+                    ));
+                }
+            } else {
+                address_index -= lookup_table.indexes.len();
+            }
+        }
+        Err(anyhow!("Index out of bounds"))
+    }
+
     pub fn find_token_account_address(owner: &Pubkey, token_mint_address: &Pubkey) -> Pubkey {
         let token_program_address =
             Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();

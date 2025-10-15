@@ -39,19 +39,11 @@ async fn main() -> Result<()> {
 
     if args.contains(&"setup".to_string()) {
         let start = Instant::now();
-        //update cached pools data
         let _ = bootstrap::update_all(DATA_FOLDER, false).await;
         let duration = start.elapsed();
         println!("Bootstrap took: {:?}", duration);
     }
-    // let test_owner = Pubkey::from_str("DxZ2rMQfnT52sW4hEmADh9PULKofcCNwp9KeG4SQ77aB").unwrap();
-    // let test_token = Pubkey::from_str("F9a5yraZ92WHRBaA3CMnRu2R26y5rCVjHzwGuoD8EYSj").unwrap();
-    // let token_account =
-    //     MeteoraV3TargetTransaction::find_token_account_address(&test_owner, &test_token);
-    //
-    // println!("Received Token Account Address: {:?}", token_account);
-    //
-    // panic!("Test Panic!!!");
+
     let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
     graph.build_cycles(4)?;
 
