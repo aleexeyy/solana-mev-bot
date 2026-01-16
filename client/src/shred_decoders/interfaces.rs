@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
-use crate::{graph::Graph, target_dexes::Program};
+use crate::{graph::market_graph::MarketGraph, target_dexes::Program};
 
 pub type RawLookupTables = HashMap<String, Vec<String>>;
 
@@ -43,7 +43,7 @@ pub trait TargetTransaction: Sync + Send {
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        graph: &Arc<Graph>,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> anyhow::Result<DecodedInstruction>;
 

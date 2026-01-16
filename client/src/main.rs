@@ -3,32 +3,39 @@ use std::{env, fs::read_to_string, sync::Arc, time::Instant};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use client::{
-    bootstrap, get_all_pool_files, get_shreds, graph, shred_decoders,
-    shred_decoders::{get_lookup_tables, interfaces::DecodeJob},
+    bootstrap,
+    engine::receive_decoded_transactions,
+    get_all_pool_files, get_shreds,
+    graph::Graph,
+    shred_decoders,
+    shred_decoders::{
+        get_lookup_tables,
+        interfaces::{DecodeJob, DecodedInstruction},
+    },
 };
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
 
-fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
-    let pool_files = get_all_pool_files(data_folder_path)?;
+// fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
+//     let pool_files = get_all_pool_files(data_folder_path)?;
 
-    let mut addresses = Vec::new();
+//     let mut addresses = Vec::new();
 
-    for pool_path in pool_files {
-        let raw_json = read_to_string(pool_path)?;
-        let deserialized: bootstrap::pool_schema::StoredPools = serde_json::from_str(&raw_json)?;
+//     for pool_path in pool_files {
+//         let raw_json = read_to_string(pool_path)?;
+//         let deserialized: bootstrap::pool_schema::StoredPools = serde_json::from_str(&raw_json)?;
 
-        addresses.extend(
-            deserialized
-                .all_pools
-                .iter()
-                .filter_map(|pool| pool.address.as_ref())
-                .map(|addr| addr.parse::<Pubkey>().expect("Failed to parse")),
-        );
-    }
+//         addresses.extend(
+//             deserialized
+//                 .all_pools
+//                 .iter()
+//                 .filter_map(|pool| pool.address.as_ref())
+//                 .map(|addr| addr.parse::<Pubkey>().expect("Failed to parse")),
+//         );
+//     }
 
-    Ok(addresses)
-}
+//     Ok(addresses)
+// }
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
@@ -44,7 +51,7 @@ async fn main() -> Result<()> {
         println!("Bootstrap took: {:?}", duration);
     }
 
-    let mut graph = graph::Graph::build_graph(DATA_FOLDER)?;
+    let mut graph = Graph::build_graph(DATA_FOLDER)?;
     graph.build_cycles(4)?;
 
     let _ = get_lookup_tables();
@@ -52,13 +59,19 @@ async fn main() -> Result<()> {
     let graph = Arc::new(ArcSwap::new(Arc::new(graph)));
 
     let (decode_tx, decode_rx) = mpsc::channel::<Vec<DecodeJob>>(128);
+    let (simulate_tx, simulate_rx) = mpsc::channel::<Vec<DecodedInstruction>>(128);
 
-    let graph_for_decoder = Arc::clone(&graph);
-    // let graph_for_arbitrage = Arc::clone(&graph);
+    let graph_for_decoder: Arc<ArcSwap<Graph>> = Arc::clone(&graph);
+    let graph_for_arbitrage: Arc<ArcSwap<Graph>> = Arc::clone(&graph);
+
+    tokio::spawn(async move {
+        let snapshot = graph_for_arbitrage.load_full();
+        receive_decoded_transactions(simulate_rx, snapshot).await;
+    });
 
     tokio::spawn(async move {
         let snapshot = graph_for_decoder.load_full();
-        shred_decoders::decode_transaction(decode_rx, snapshot).await;
+        shred_decoders::decode_transaction(decode_rx, simulate_tx, snapshot).await;
     });
 
     tokio::spawn(async move {

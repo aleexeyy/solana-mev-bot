@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{
-    graph::Graph,
+    graph::market_graph::{MarketGraph, TokenId},
     shred_decoders::{
         TargetTransaction,
         interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
@@ -20,7 +20,7 @@ impl TargetTransaction for OrcaV3TargetTransaction {
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        graph: &Arc<Graph>,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         let mut reader = data;
@@ -32,7 +32,7 @@ impl TargetTransaction for OrcaV3TargetTransaction {
                 reader,
                 accounts,
                 account_keys,
-                graph,
+                market,
                 lookup_tables,
             ),
             SWAP_V2 => {
@@ -59,7 +59,7 @@ impl OrcaV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         if accounts.len() < SWAP_V1_ACCOUNTS_LEN {
@@ -85,9 +85,9 @@ impl OrcaV3TargetTransaction {
         let is_exact_input: bool = data[32] == 1;
         let is_direct: bool = data[33] == 1;
 
-        let node_in_index: usize;
-        let node_out_index: usize;
-        if let Some(edge) = graph.get_edge(&pool_address) {
+        let node_in_index: TokenId;
+        let node_out_index: TokenId;
+        if let Some(edge) = market.get_edge(&pool_address) {
             let node_lowest = edge.node_lowest;
             let node_highest = edge.node_highest;
             let is_reversed: bool = edge.reversed;
@@ -101,8 +101,12 @@ impl OrcaV3TargetTransaction {
             return Err(anyhow!("Unsupported Pool"));
         }
 
-        let token_in_address = graph.nodes[node_in_index].address;
-        let token_out_address = graph.nodes[node_out_index].address;
+        let token_in_address = market
+            .token_address(node_in_index)
+            .ok_or_else(|| anyhow!("Invalid token_in node index"))?;
+        let token_out_address = market
+            .token_address(node_out_index)
+            .ok_or_else(|| anyhow!("Invalid token_out node index"))?;
 
         if is_exact_input {
             Ok(DecodedInstruction {
@@ -211,7 +215,7 @@ impl OrcaV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
     ) -> Result<DecodedInstruction> {
         tracing::warn!(
             "Unsupported Remove liquidity OrcaV3 instruction: {:?}",
@@ -226,7 +230,7 @@ impl OrcaV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
     ) -> Result<DecodedInstruction> {
         tracing::warn!("Unsupported Add liquidity OrcaV3 instruction: {:?}", data);
         Err(anyhow!("Unsupported instructions"))

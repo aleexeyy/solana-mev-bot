@@ -8,9 +8,14 @@ use std::{
 // use num_cpus;
 use once_cell::sync::Lazy;
 use solana_sdk::pubkey::Pubkey;
-use tokio::{sync::mpsc::Receiver, task};
+use tokio::{
+    sync::mpsc::{Receiver, Sender},
+    task,
+};
 
-use crate::shred_decoders::interfaces::{DecodeJob, RawLookupTables, TargetTransaction};
+use crate::shred_decoders::interfaces::{
+    DecodeJob, DecodedInstruction, RawLookupTables, TargetTransaction,
+};
 // use tokio_stream::wrappers::ReceiverStream;
 use crate::{benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph};
 
@@ -92,18 +97,22 @@ pub fn get_lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
 }
 
 //TODO: implement decoding logic also for adding and removing liquidity(sometimes they do create an arbitrage opportunity)
-//TODO: implement Lookup table check in case of index out of bounds
-pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: Arc<Graph>) {
+pub async fn decode_transaction(
+    mut decode_rx: Receiver<Vec<DecodeJob>>,
+    simulate_tx: Sender<Vec<DecodedInstruction>>,
+    graph: Arc<Graph>,
+) {
     while let Some(batch) = decode_rx.recv().await {
         let batch_size = batch.len();
 
         let t0 = std::time::Instant::now();
         let before_cpu = get_cpu_time();
 
-        let graph = Arc::clone(&graph);
+        let graph_ref: Arc<Graph> = Arc::clone(&graph);
+        let simulate_tx_ref = simulate_tx.clone();
 
         let res = task::spawn_blocking(move || {
-            let mut per_tx_counts = Vec::with_capacity(batch.len());
+            let mut per_tx_counts = Vec::with_capacity(batch_size);
 
             for DecodeJob {
                 transaction_address,
@@ -114,27 +123,40 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
             {
                 let mut decoded_ok = 0usize;
                 let mut decoded_err = 0usize;
+                let mut decoded_tx = Vec::with_capacity(instructions.len());
 
                 for instruction in instructions {
                     let idx = instruction.program.index();
 
-                    let data_slice: &[u8] = &instruction.data;
-                    let accounts_slice: &[u8] = &instruction.accounts;
+                    let data_slice = &instruction.data;
+                    let accounts_slice = &instruction.accounts;
 
                     match DECODERS[idx].decode(
                         &account_keys,
                         accounts_slice,
                         data_slice,
-                        &graph,
+                        graph_ref.market_graph(),
                         &lookup_tables,
                     ) {
-                        Ok(_) => decoded_ok += 1,
+                        Ok(decoded_instruction) => {
+                            decoded_tx.push(decoded_instruction);
+                            decoded_ok += 1;
+                        }
                         Err(err) => {
                             tracing::error!("{:?}: {:?}", transaction_address, err);
                             tracing::error!("Instruction Data: {:?}", &instruction.data);
-                            decoded_err += 1
+                            decoded_err += 1;
                         }
                     }
+                }
+
+                if !decoded_tx.is_empty() {
+                    let simulate_tx_clone = simulate_tx_ref.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = simulate_tx_clone.send(decoded_tx).await {
+                            tracing::debug!("simulate_tx closed: {:?}", e);
+                        }
+                    });
                 }
 
                 per_tx_counts.push((transaction_address, decoded_ok, decoded_err));
@@ -144,22 +166,22 @@ pub async fn decode_transaction(mut decode_rx: Receiver<Vec<DecodeJob>>, graph: 
         })
         .await;
 
-        // match res {
-        //     Ok(per_tx_counts) => {
-        //         for (tx_address, ok, err) in per_tx_counts.into_iter() {
-        //             let processed = ok + err;
-        //             tracing::info!(
-        //                 processed = processed,
-        //                 ok = ok,
-        //                 err = err,
-        //                 "decoded transaction results"
-        //             );
-        //         }
-        //     }
-        //     Err(err) => {
-        //         tracing::error!("Error during decoding: {:?}", err);
-        //     }
-        // }
+        match res {
+            Ok(per_tx_counts) => {
+                for (tx_address, ok, err) in per_tx_counts.into_iter() {
+                    let processed = ok + err;
+                    tracing::debug!(
+                        processed = processed,
+                        ok = ok,
+                        err = err,
+                        "decoded transaction results"
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::error!("Error during decoding: {:?}", err);
+            }
+        }
 
         let total_wall = t0.elapsed();
         let total_cpu = get_cpu_time() - before_cpu;

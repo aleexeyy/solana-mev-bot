@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{
-    graph::Graph,
+    graph::market_graph::MarketGraph,
     shred_decoders::{
         TargetTransaction,
         interfaces::{DecodedInstruction, ReducedLookupTable},
@@ -19,7 +19,7 @@ impl TargetTransaction for JupiterV6TargetTransaction {
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         Err(anyhow!(
@@ -34,7 +34,7 @@ impl JupiterV6TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -44,7 +44,7 @@ impl JupiterV6TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
     ) -> Result<DecodedInstruction> {
         todo!()
     }
@@ -53,7 +53,7 @@ impl JupiterV6TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        _market: &MarketGraph,
     ) -> Result<DecodedInstruction> {
         todo!()
     }

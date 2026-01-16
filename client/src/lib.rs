@@ -8,6 +8,7 @@ use anyhow::Result;
 mod benchmark_tools;
 pub mod bootstrap;
 pub mod bootstrap_decoders;
+pub mod engine;
 pub mod get_shreds;
 pub mod graph;
 pub mod shred_decoders;

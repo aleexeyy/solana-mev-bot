@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{
-    graph::Graph,
+    graph::market_graph::MarketGraph,
     shred_decoders::{
         TargetTransaction,
         interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
@@ -20,7 +20,7 @@ impl TargetTransaction for RaydiumV2TargetTransaction {
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        _graph: &Arc<Graph>,
+        _market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         let mut reader = data;

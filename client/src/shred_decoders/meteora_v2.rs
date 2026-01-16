@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{
-    graph::Graph,
+    graph::market_graph::{MarketGraph, TokenId},
     shred_decoders::{
         TargetTransaction,
         interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
@@ -20,7 +20,7 @@ impl TargetTransaction for MeteoraV2TargetTransaction {
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        graph: &Arc<Graph>,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         let mut reader = data;
@@ -29,7 +29,7 @@ impl TargetTransaction for MeteoraV2TargetTransaction {
 
         let decoded_instruction = match instruction_type {
             SWAP => {
-                self.decode_swap_instruction(data, accounts, account_keys, graph, lookup_tables)
+                self.decode_swap_instruction(data, accounts, account_keys, market, lookup_tables)
             }
             REMOVE_LIQUIDITY_SINGLE_SIDE => Err(anyhow!("Unsupported instruction type")),
             ADD_IMBALANCE_LIQUIDITY => Err(anyhow!("Unsupported instruction type")),
@@ -52,7 +52,7 @@ impl MeteoraV2TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
-        graph: &Arc<Graph>,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
     ) -> Result<DecodedInstruction> {
         if accounts.len() < SWAP_ACCOUNTS_LEN {
@@ -88,9 +88,9 @@ impl MeteoraV2TargetTransaction {
         let amount_in: u64 = u64::from_le_bytes(data[0..8].try_into()?);
         let minimum_amount_out: u64 = u64::from_le_bytes(data[8..16].try_into()?);
 
-        let node_a_index: usize;
-        let node_b_index: usize;
-        if let Some(edge) = graph.get_edge(&pool_address) {
+        let node_a_index: TokenId;
+        let node_b_index: TokenId;
+        if let Some(edge) = market.get_edge(&pool_address) {
             let node_lowest = edge.node_lowest;
             let node_highest = edge.node_highest;
             let is_reversed: bool = edge.reversed;
@@ -104,8 +104,12 @@ impl MeteoraV2TargetTransaction {
             return Err(anyhow!("Unsupported Pool"));
         }
 
-        let token_a_address = graph.nodes[node_a_index].address;
-        let token_b_address = graph.nodes[node_b_index].address;
+        let token_a_address = market
+            .token_address(node_a_index)
+            .ok_or_else(|| anyhow!("Invalid token_a node index"))?;
+        let token_b_address = market
+            .token_address(node_b_index)
+            .ok_or_else(|| anyhow!("Invalid token_b node index"))?;
 
         let token_a_account_address =
             DecodingUtils::find_token_account_address(&owner, &token_a_address);
