@@ -67,7 +67,7 @@ impl DexPool for AmmPool {
         if amount_out_u128 == 0u128 || amount_out_u128 >= reserve_out_u128 {
             return None;
         }
-
+        
         let new_reserve_out = reserve_out_u128.sub(amount_out_u128);
         let new_reserve_in = reserve_in_u128.add(amount_in_u128);
 

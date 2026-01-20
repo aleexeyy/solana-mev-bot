@@ -16,26 +16,26 @@ use client::{
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
 
-// fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
-//     let pool_files = get_all_pool_files(data_folder_path)?;
+fn load_pools(data_folder_path: &str) -> anyhow::Result<Vec<Pubkey>> {
+    let pool_files = get_all_pool_files(data_folder_path)?;
 
-//     let mut addresses = Vec::new();
+    let mut addresses = Vec::new();
 
-//     for pool_path in pool_files {
-//         let raw_json = read_to_string(pool_path)?;
-//         let deserialized: bootstrap::pool_schema::StoredPools = serde_json::from_str(&raw_json)?;
+    for pool_path in pool_files {
+        let raw_json = read_to_string(pool_path)?;
+        let deserialized: bootstrap::pool_schema::StoredPools = serde_json::from_str(&raw_json)?;
 
-//         addresses.extend(
-//             deserialized
-//                 .all_pools
-//                 .iter()
-//                 .filter_map(|pool| pool.address.as_ref())
-//                 .map(|addr| addr.parse::<Pubkey>().expect("Failed to parse")),
-//         );
-//     }
+        addresses.extend(
+            deserialized
+                .all_pools
+                .iter()
+                .filter_map(|pool| pool.address.as_ref())
+                .map(|addr| addr.parse::<Pubkey>().expect("Failed to parse")),
+        );
+    }
 
-//     Ok(addresses)
-// }
+    Ok(addresses)
+}
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
