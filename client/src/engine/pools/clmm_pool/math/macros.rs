@@ -12,7 +12,6 @@ macro_rules! require_gt {
     };
 }
 
-
 #[macro_export]
 macro_rules! require_gte {
     ($value1: expr, $value2: expr, $error_code: expr $(,)?) => {
@@ -26,7 +25,6 @@ macro_rules! require_gte {
         }
     };
 }
-
 
 #[macro_export]
 macro_rules! require {

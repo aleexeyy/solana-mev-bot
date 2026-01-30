@@ -98,6 +98,8 @@ impl Graph {
 mod tests {
     use std::{str::FromStr, sync::atomic::Ordering};
 
+    use solana_sdk::pubkey::Pubkey;
+
     use super::*;
     use crate::bootstrap::pool_schema::{DexType, PoolType};
 
@@ -252,6 +254,61 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(graph.nodes_len(), 2);
         assert_eq!(graph.edges_len(), 1);
+    }
+
+    #[test]
+    fn test_insert_edge_canonicalizes_token_a_b_by_mint_address() {
+        let mut graph = Graph::new();
+
+        let token0 = Pubkey::new_from_array([2u8; 32]);
+        let token1 = Pubkey::new_from_array([1u8; 32]);
+
+        let node0 = graph
+            .insert_node(TokenInfo {
+                address: Some(token0.to_string()),
+                decimals: Some(6),
+                name: Some("Token0".to_string()),
+                symbol: Some("T0".to_string()),
+            })
+            .unwrap();
+
+        let node1 = graph
+            .insert_node(TokenInfo {
+                address: Some(token1.to_string()),
+                decimals: Some(6),
+                name: Some("Token1".to_string()),
+                symbol: Some("T1".to_string()),
+            })
+            .unwrap();
+
+        let vault0 = Pubkey::new_from_array([9u8; 32]);
+        let vault1 = Pubkey::new_from_array([8u8; 32]);
+        let pool_addr = Pubkey::new_from_array([7u8; 32]);
+        let config = Pubkey::new_from_array([6u8; 32]);
+
+        let test_pool = PoolInfo {
+            address: Some(pool_addr.to_string()),
+            fee_rate: Some(400),
+            pool_type: Some(PoolType::Concentrated),
+            dex: Some(DexType::Orca),
+            tick_spacing: Some(64),
+            token_a: None,
+            token_b: None,
+            token_vault_a: Some(vault0.to_string()),
+            token_vault_b: Some(vault1.to_string()),
+            config: Some(config.to_string()),
+        };
+
+        graph.insert_edge(test_pool, node0, node1).unwrap();
+        let edge = graph.get_edge(&pool_addr).unwrap();
+
+        // Canonical order is by mint pubkey bytes, so token1 ([1; 32]) is token A.
+        assert_eq!(edge.node_a, node1);
+        assert_eq!(edge.node_b, node0);
+
+        // Vaults should follow the token mapping.
+        assert_eq!(edge.token_vault_a, vault1);
+        assert_eq!(edge.token_vault_b, vault0);
     }
 
     #[test]

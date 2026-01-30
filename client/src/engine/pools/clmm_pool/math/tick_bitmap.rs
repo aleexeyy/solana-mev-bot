@@ -1,16 +1,20 @@
-use crate::FastMap;
-use crate::U256_1;
-use crate::error::MathError;
-use crate::math::bit_math::{least_significant_bit, most_significant_bit};
-use alloy_primitives::U256;
-use std::ops::Shr;
+use std::collections::HashMap;
+
+use super::{
+    big_num::U256,
+    bit_math::{least_significant_bit, most_significant_bit},
+};
+use crate::engine::pools::clmm_pool::clmm_error::ErrorCode;
+
+type FastMap<K, V> = HashMap<K, V>;
+const U256_1: U256 = U256([1, 0, 0, 0]);
 
 /// Computes the bitmap word index and bit position for a given tick.
 ///
 /// This is a low‑level helper that maps a tick index into the
 /// `(word, bit)` coordinates used by the Uniswap V3 tick bitmap.
 pub fn position(tick: i32) -> (i16, u8) {
-    (tick.shr(8) as i16, (tick & 255) as u8)
+    ((tick >> 8) as i16, (tick & 255) as u8)
 }
 
 /// Returns the bitmap word stored at `word`, or zero if absent.
@@ -18,7 +22,7 @@ pub fn position(tick: i32) -> (i16, u8) {
 /// Callers use this to read a 256‑bit chunk of initialized ticks
 /// from a sparse bitmap map.
 pub fn get_word(bitmap: &FastMap<i16, U256>, word: &i16) -> U256 {
-    *bitmap.get(word).unwrap_or(&U256::ZERO)
+    bitmap.get(word).copied().unwrap_or_else(U256::zero)
 }
 
 /// Toggles (flips) the initialized status of a tick in the bitmap.
@@ -29,14 +33,17 @@ pub fn flip_tick(
     tick_bitmap: &mut FastMap<i16, U256>,
     tick: i32,
     tick_spacing: i32,
-) -> Result<(), MathError> {
+) -> Result<(), ErrorCode> {
     if (tick % tick_spacing) != 0 {
-        return Err(MathError::OutOfBounds);
+        return Err(ErrorCode::OutOfBounds);
     }
 
     let (word_pos, bit_pos) = position(tick / tick_spacing);
     let mask = U256_1 << bit_pos;
-    let word = *tick_bitmap.get(&word_pos).unwrap_or(&U256::ZERO);
+    let word = tick_bitmap
+        .get(&word_pos)
+        .copied()
+        .unwrap_or_else(U256::zero);
     tick_bitmap.insert(word_pos, word ^ mask);
     Ok(())
 }
@@ -51,7 +58,7 @@ pub fn next_initialized_tick_within_one_word(
     tick: i32,
     tick_spacing: i32,
     lte: bool,
-) -> Result<(i32, bool), MathError> {
+) -> Result<(i32, bool), ErrorCode> {
     let mut compressed: i32 = tick / tick_spacing;
 
     if tick < 0 && tick % tick_spacing != 0 {
@@ -67,7 +74,9 @@ pub fn next_initialized_tick_within_one_word(
         let initialized = !masked.is_zero();
 
         let next: i32 = if initialized {
-            (compressed - (bit_pos - most_significant_bit(masked)?) as i32) * tick_spacing
+            (compressed
+                - (bit_pos - most_significant_bit(masked).ok_or(ErrorCode::ZeroValue)?) as i32)
+                * tick_spacing
         } else {
             (compressed - bit_pos as i32) * tick_spacing
         };
@@ -75,14 +84,17 @@ pub fn next_initialized_tick_within_one_word(
     } else {
         let (word_pos, bit_pos) = position(compressed + 1);
 
-        let mask: U256 = ((U256_1 << bit_pos) - U256_1).bitxor(U256::MAX);
+        let mask: U256 = ((U256_1 << bit_pos) - U256_1) ^ U256::max_value();
 
         let masked: U256 = get_word(bitmap, &word_pos) & mask;
 
         let initialized = !masked.is_zero();
 
         let next: i32 = if initialized {
-            (compressed + 1 + (least_significant_bit(masked)? - bit_pos) as i32) * tick_spacing
+            (compressed
+                + 1
+                + (least_significant_bit(masked).ok_or(ErrorCode::ZeroValue)? - bit_pos) as i32)
+                * tick_spacing
         } else {
             (compressed + 1 + (255u8 - bit_pos) as i32) * tick_spacing
         };
@@ -129,7 +141,7 @@ mod tests {
         let (word, bit) = position(78);
         assert_eq!(get_word(&bm, &word), U256_1 << bit);
         flip_tick(&mut bm, 78, 1).unwrap();
-        assert_eq!(get_word(&bm, &word), U256::ZERO);
+        assert_eq!(get_word(&bm, &word), U256::zero());
     }
 
     // -----------------------------------------------------------------------------

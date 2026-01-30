@@ -12,6 +12,8 @@ pub struct SwapQuoteResult {
     pub new_reserve_out: u64,
 }
 
+pub struct QuoteSwapContext {}
+
 pub trait DexPool {
     fn address(&self) -> &Pubkey;
 
@@ -26,4 +28,6 @@ pub trait DexPool {
     fn can_execute(&self) -> bool;
 
     fn pool_type(&self) -> PoolType;
+
+    fn last_slot_updated(&self) -> u64;
 }

@@ -25,6 +25,7 @@ pub async fn deshred(decode_tx: Sender<Vec<DecodeJob>>) -> Result<()> {
         .into_inner();
 
     while let Some(slot_entry) = stream.message().await? {
+        let slot = slot_entry.slot;
         let entries =
             match bincode::deserialize::<Vec<solana_entry::entry::Entry>>(&slot_entry.entries) {
                 Ok(e) => e,
@@ -34,7 +35,7 @@ pub async fn deshred(decode_tx: Sender<Vec<DecodeJob>>) -> Result<()> {
                 }
             };
 
-        let target_shreds = filter_by_programs(entries.as_slice());
+        let target_shreds = filter_by_programs(entries.as_slice(), slot);
 
         if !target_shreds.is_empty() && decode_tx.send(target_shreds).await.is_err() {
             break;
@@ -42,7 +43,7 @@ pub async fn deshred(decode_tx: Sender<Vec<DecodeJob>>) -> Result<()> {
     }
     Ok(())
 }
-pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
+pub fn filter_by_programs(entries: &[Entry], slot: u64) -> Vec<DecodeJob> {
     let mut jobs = Vec::new();
 
     for entry in entries.iter() {
@@ -70,6 +71,7 @@ pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
             if !instructions.is_empty() {
                 if let Some(lookup_tables) = tx.message.address_table_lookups() {
                     jobs.push(DecodeJob {
+                        slot: slot,
                         transaction_address: tx.signatures[0],
                         account_keys,
                         lookup_tables: Arc::new(
@@ -93,6 +95,7 @@ pub fn filter_by_programs(entries: &[Entry]) -> Vec<DecodeJob> {
                     });
                 } else {
                     jobs.push(DecodeJob {
+                        slot: slot,
                         transaction_address: tx.signatures[0],
                         account_keys,
                         lookup_tables: Arc::new(vec![ReducedLookupTable::default()]),

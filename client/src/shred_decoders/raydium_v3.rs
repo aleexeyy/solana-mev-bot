@@ -1,13 +1,13 @@
 use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 use crate::{
-    graph::market_graph::{MarketGraph, TokenId},
+    graph::market_graph::MarketGraph,
     shred_decoders::{
         TargetTransaction,
-        interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
+        interfaces::{ReducedLookupTable, ShredEvent, ShredEventType, SwapConstraint},
         utils::DecodingUtils,
     },
 };
@@ -17,17 +17,20 @@ pub struct RaydiumV3TargetTransaction;
 impl TargetTransaction for RaydiumV3TargetTransaction {
     fn decode(
         &self,
+        slot: u64,
+        signature: Signature,
+        instruction_index: u8,
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
         market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> Result<DecodedInstruction> {
+    ) -> Result<ShredEvent> {
         let mut reader = data;
         let mut instruction_type = [0u8; 8];
         reader.read_exact(&mut instruction_type)?;
 
-        let decoded_instruction = match instruction_type {
+        let (pool_address, event) = match instruction_type {
             SWAP_V1 => self.decode_swap_v1_instruction(
                 reader,
                 accounts,
@@ -35,15 +38,25 @@ impl TargetTransaction for RaydiumV3TargetTransaction {
                 market,
                 lookup_tables,
             ),
-            SWAP_V2 => {
-                self.decode_swap_v2_instruction(reader, accounts, account_keys, lookup_tables)
-            }
+            SWAP_V2 => self.decode_swap_v2_instruction(
+                reader,
+                accounts,
+                account_keys,
+                market,
+                lookup_tables,
+            ),
             _ => {
                 return Err(anyhow!("Unsupported swap instruction type on RaydiumV3"));
             }
         }?;
 
-        Ok(decoded_instruction)
+        Ok(ShredEvent::new(
+            signature,
+            slot,
+            pool_address,
+            instruction_index,
+            event,
+        ))
     }
 }
 
@@ -56,7 +69,7 @@ impl RaydiumV3TargetTransaction {
         account_keys: &[Pubkey],
         market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> Result<DecodedInstruction> {
+    ) -> Result<(Pubkey, ShredEventType)> {
         if accounts.len() < SWAP_V1_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_V1_ACCOUNTS_LEN, received {} | expected {}",
@@ -84,59 +97,27 @@ impl RaydiumV3TargetTransaction {
         //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
         let specified_amount: u64 = u64::from_le_bytes(data[0..8].try_into()?);
-        let amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
+        let _amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
 
         let sqrt_price_limit: u128 = u128::from_le_bytes(data[16..32].try_into()?);
 
         let is_exact_input: bool = data[32] == 1;
 
-        let node_in_index: TokenId;
-        let node_out_index: TokenId;
-
-        if let Some(edge) = market.get_edge(&pool_address) {
-            let node_lowest = edge.node_lowest;
-            let node_highest = edge.node_highest;
-            let vault_lowest = edge.token_vault_lowest;
-
-            if input_vault == vault_lowest {
-                (node_in_index, node_out_index) = (node_lowest, node_highest);
-            } else {
-                (node_in_index, node_out_index) = (node_highest, node_lowest);
-            }
+        let a_to_b = if let Some(edge) = market.get_edge(&pool_address) {
+            input_vault == edge.token_vault_a
         } else {
             return Err(anyhow!("Unsupported Pool"));
-        }
+        };
 
-        let token_in_address = market
-            .token_address(node_in_index)
-            .ok_or_else(|| anyhow!("Invalid token_in node index"))?;
-        let token_out_address = market
-            .token_address(node_out_index)
-            .ok_or_else(|| anyhow!("Invalid token_out node index"))?;
-
-        if is_exact_input {
-            Ok(DecodedInstruction {
-                pool_address,
-                token_in_address,
-                token_out_address,
-                operation_type: OperationType::SwapExactInput {
-                    amount_in: specified_amount,
-                    minimum_amount_out: amount_threshold,
-                    sqrt_price_limit,
-                },
-            })
-        } else {
-            Ok(DecodedInstruction {
-                pool_address,
-                token_in_address,
-                token_out_address,
-                operation_type: OperationType::SwapExactOutput {
-                    amount_out: specified_amount,
-                    maximum_amount_in: amount_threshold,
-                    sqrt_price_limit,
-                },
-            })
-        }
+        Ok((
+            pool_address,
+            ShredEventType::Swap {
+                amount_specified: specified_amount,
+                limit: SwapConstraint::SqrtPriceLimit(sqrt_price_limit),
+                a_to_b,
+                is_base_input: is_exact_input,
+            },
+        ))
     }
 
     //example: https://solscan.io/tx/2j7ikfSmJ1AMt979tHmqKQGdv5KiBppveHoQTdhjxLkVkr3FjKf9C7kACkhAF6zUX3UZepumuQJzJMcWQESfAPyV
@@ -145,8 +126,9 @@ impl RaydiumV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> Result<DecodedInstruction> {
+    ) -> Result<(Pubkey, ShredEventType)> {
         if accounts.len() < SWAP_V2_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_V2_ACCOUNTS_LEN, received {} | expected {}",
@@ -184,56 +166,36 @@ impl RaydiumV3TargetTransaction {
         //     .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
 
         let specified_amount: u64 = u64::from_le_bytes(data[0..8].try_into()?);
-        let amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
+        let _amount_threshold: u64 = u64::from_le_bytes(data[8..16].try_into()?);
 
         let sqrt_price_limit: u128 = u128::from_le_bytes(data[16..32].try_into()?);
         let is_exact_input: bool = data[32] == 1;
 
-        if is_exact_input {
-            Ok(DecodedInstruction {
-                pool_address,
-                token_in_address,
-                token_out_address,
-                operation_type: OperationType::SwapExactInput {
-                    amount_in: specified_amount,
-                    minimum_amount_out: amount_threshold,
-                    sqrt_price_limit,
-                },
-            })
-        } else {
-            Ok(DecodedInstruction {
-                pool_address,
-                token_in_address,
-                token_out_address,
-                operation_type: OperationType::SwapExactOutput {
-                    amount_out: specified_amount,
-                    maximum_amount_in: amount_threshold,
-                    sqrt_price_limit,
-                },
-            })
-        }
-    }
+        let edge = market
+            .get_edge(&pool_address)
+            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+        let token_a = market
+            .token_address(edge.node_a)
+            .ok_or_else(|| anyhow!("Invalid token_a node index"))?;
+        let token_b = market
+            .token_address(edge.node_b)
+            .ok_or_else(|| anyhow!("Invalid token_b node index"))?;
 
-    //example: https://solscan.io/tx/3EeKhraYxNGbzotcDGzRhrgkdips7T5CTbyFpd4hJ5DM9XuRVANRfoqZKotJwL44bRnYDAXuVBAkgD9QGjzGaxsz
-    fn decode_remove_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        _market: &MarketGraph,
-    ) -> Result<DecodedInstruction> {
-        todo!()
-    }
+        let a_to_b = match token_in_address {
+            _ if token_in_address == token_a && token_out_address == token_b => true,
+            _ if token_in_address == token_b && token_out_address == token_a => false,
+            _ => return Err(anyhow!("Swap token mints do not match pool")),
+        };
 
-    //example: https://solscan.io/tx/5LQEmeRxwXoJ5qowbf44PS8d9e8hxtG4zWoTzDntoJiXcJPENnBmnV1PSyVCMn6ZHhjMoKWb4QutWiYp3ZA8dSXA
-    fn decode_add_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        _market: &MarketGraph,
-    ) -> Result<DecodedInstruction> {
-        todo!()
+        Ok((
+            pool_address,
+            ShredEventType::Swap {
+                amount_specified: specified_amount,
+                limit: SwapConstraint::SqrtPriceLimit(sqrt_price_limit),
+                a_to_b,
+                is_base_input: is_exact_input,
+            },
+        ))
     }
 }
 

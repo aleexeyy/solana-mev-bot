@@ -1,13 +1,13 @@
 use std::{io::Read, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 use crate::{
     graph::market_graph::MarketGraph,
     shred_decoders::{
         TargetTransaction,
-        interfaces::{DecodedInstruction, OperationType, ReducedLookupTable},
+        interfaces::{ReducedLookupTable, ShredEvent, ShredEventType, SwapConstraint},
         utils::DecodingUtils,
     },
 };
@@ -17,26 +17,22 @@ pub struct MeteoraV3TargetTransaction;
 impl TargetTransaction for MeteoraV3TargetTransaction {
     fn decode(
         &self,
+        slot: u64,
+        signature: Signature,
+        instruction_index: u8,
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
-        _market: &MarketGraph,
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> Result<DecodedInstruction> {
+    ) -> Result<ShredEvent> {
         let mut reader = data;
         let mut instruction_type = [0u8; 8];
         reader.read_exact(&mut instruction_type)?;
 
-        let decoded_instruction = match instruction_type {
-            SWAP => self.decode_swap_instruction(reader, accounts, account_keys, lookup_tables),
-            ADD_LIQUIDITY => {
-                return Err(anyhow!("Unsupported swap instruction type"));
-            }
-            REMOVE_LIQUIDITY => {
-                return Err(anyhow!("Unsupported swap instruction type"));
-            }
-            REMOVE_ALL_LIQUIDITY => {
-                return Err(anyhow!("Unsupported swap instruction type"));
+        let (pool_address, event) = match instruction_type {
+            SWAP => {
+                self.decode_swap_instruction(reader, accounts, account_keys, market, lookup_tables)
             }
             CLAIM_FEES => {
                 return Err(anyhow!("Unsupported swap instruction type"));
@@ -56,7 +52,14 @@ impl TargetTransaction for MeteoraV3TargetTransaction {
                 return Err(anyhow!("Unsupported swap instruction type"));
             }
         }?;
-        Ok(decoded_instruction)
+
+        Ok(ShredEvent::new(
+            signature,
+            slot,
+            pool_address,
+            instruction_index,
+            event,
+        ))
     }
 }
 
@@ -67,8 +70,9 @@ impl MeteoraV3TargetTransaction {
         data: &[u8],
         accounts: &[u8],
         account_keys: &[Pubkey],
+        market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> Result<DecodedInstruction> {
+    ) -> Result<(Pubkey, ShredEventType)> {
         if accounts.len() < SWAP_ACCOUNTS_LEN {
             return Err(anyhow!(
                 "accounts len != SWAP_ACCOUNTS_LEN, received {} | expected {}",
@@ -125,112 +129,35 @@ impl MeteoraV3TargetTransaction {
         let amount_in: u64 = u64::from_le_bytes(data[0..8].try_into()?);
         let minimum_amount_out: u64 = u64::from_le_bytes(data[8..16].try_into()?);
 
-        Ok(DecodedInstruction {
+        let edge = market
+            .get_edge(&pool_address)
+            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+        let token_a = market
+            .token_address(edge.node_a)
+            .ok_or_else(|| anyhow!("Invalid token_a node index"))?;
+        let token_b = market
+            .token_address(edge.node_b)
+            .ok_or_else(|| anyhow!("Invalid token_b node index"))?;
+
+        let a_to_b = match token_in_address {
+            _ if token_in_address == token_a && token_out_address == token_b => true,
+            _ if token_in_address == token_b && token_out_address == token_a => false,
+            _ => return Err(anyhow!("Swap token mints do not match pool")),
+        };
+
+        Ok((
             pool_address,
-            token_in_address,
-            token_out_address,
-            operation_type: OperationType::SwapExactInput {
-                amount_in,
-                minimum_amount_out,
-                sqrt_price_limit: 0,
+            ShredEventType::Swap {
+                amount_specified: amount_in,
+                limit: SwapConstraint::TokenAmountLimit(minimum_amount_out),
+                a_to_b,
+                is_base_input: true,
             },
-        })
-    }
-
-    fn decode_remove_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        _market: &MarketGraph,
-    ) -> Result<DecodedInstruction> {
-        if accounts.len() != REMOVE_LIQUIDITY_ACCOUNTS_LEN {
-            return Err(anyhow!(
-                "accounts len != REMOVE_LIQUIDITY_ACCOUNTS_LEN, received {} | expected {}",
-                accounts.len(),
-                REMOVE_LIQUIDITY_ACCOUNTS_LEN
-            ));
-        }
-
-        let pool_address = *account_keys
-            .get(usize::from(accounts[1]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_a_address = *account_keys
-            .get(usize::from(accounts[7]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_b_address = *account_keys
-            .get(usize::from(accounts[8]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-
-        let token_a_amount: u64 = u64::from_le_bytes(data[0..8].try_into()?);
-        let token_b_amount: u64 = u64::from_le_bytes(data[8..16].try_into()?);
-
-        Ok(DecodedInstruction {
-            pool_address,
-            token_in_address: token_a_address,
-            token_out_address: token_b_address,
-            // token_in_vault: token_a_vault,
-            // token_out_vault: token_b_vault,
-            operation_type: OperationType::RemoveLiquidity {
-                remove_amount_a: token_a_amount,
-                remove_amount_b: token_b_amount,
-            },
-        })
-    }
-
-    // example: https://solscan.io/tx/ejb7H6Ay3CTeEXmetbdcxwLD89G1z7pdVXmqwrtwJjBi1zodv3KiTV48rC6y84yDYS19Ldwdksy9P32qJQmkFc9
-    fn decode_add_liquidity_instruction(
-        &self,
-        data: &[u8],
-        accounts: &[u8],
-        account_keys: &[Pubkey],
-        _market: &MarketGraph,
-    ) -> Result<DecodedInstruction> {
-        if accounts.len() != ADD_LIQUIDITY_ACCOUNTS_LEN {
-            return Err(anyhow!(
-                "accounts len != ADD_LIQUIDITY_ACCOUNTS_LEN, received {} | expected {}",
-                accounts.len(),
-                ADD_LIQUIDITY_ACCOUNTS_LEN
-            ));
-        }
-
-        let pool_address = *account_keys
-            .get(usize::from(accounts[0]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-
-        let token_a_address = *account_keys
-            .get(usize::from(accounts[6]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-        let token_b_address = *account_keys
-            .get(usize::from(accounts[7]))
-            .ok_or_else(|| anyhow::anyhow!("Index out of range in account_keys"))?;
-
-        let liquidity_delta: u128 = u128::from_le_bytes(data[0..16].try_into()?); //TODO: check if we need that
-        let token_a_amount: u64 = u64::from_le_bytes(data[16..24].try_into()?);
-        let token_b_amount: u64 = u64::from_le_bytes(data[24..32].try_into()?);
-
-        Ok(DecodedInstruction {
-            pool_address,
-            token_in_address: token_a_address,
-            token_out_address: token_b_address,
-            operation_type: OperationType::AddLiquidity {
-                add_amount_a: token_a_amount,
-                add_amount_b: token_b_amount,
-            },
-        })
+        ))
     }
 }
 
 impl MeteoraV3TargetTransaction {}
-
-const ADD_LIQUIDITY: [u8; 8] = [181, 157, 89, 67, 143, 182, 52, 72];
-const ADD_LIQUIDITY_ACCOUNTS_LEN: usize = 14;
-
-const REMOVE_ALL_LIQUIDITY: [u8; 8] = [10, 51, 61, 35, 112, 105, 24, 85];
-// const REMOVE_ALL_LIQUIDITY_ACCOUNTS_LEN: usize = 15;
-
-const REMOVE_LIQUIDITY: [u8; 8] = [80, 85, 209, 72, 24, 206, 177, 108];
-const REMOVE_LIQUIDITY_ACCOUNTS_LEN: usize = 15;
 
 //maybe it is to create position
 const FILTER_2: [u8; 8] = [48, 215, 197, 153, 96, 203, 180, 133];

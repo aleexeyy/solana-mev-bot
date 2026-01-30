@@ -7,10 +7,9 @@ use client::{
     engine::receive_decoded_transactions,
     get_all_pool_files, get_shreds,
     graph::Graph,
-    shred_decoders,
     shred_decoders::{
-        get_lookup_tables,
-        interfaces::{DecodeJob, DecodedInstruction},
+        self, get_lookup_tables,
+        interfaces::{DecodeJob, ShredEvent},
     },
 };
 use solana_sdk::pubkey::Pubkey;
@@ -59,7 +58,7 @@ async fn main() -> Result<()> {
     let graph = Arc::new(ArcSwap::new(Arc::new(graph)));
 
     let (decode_tx, decode_rx) = mpsc::channel::<Vec<DecodeJob>>(128);
-    let (simulate_tx, simulate_rx) = mpsc::channel::<Vec<DecodedInstruction>>(128);
+    let (simulate_tx, simulate_rx) = mpsc::channel::<Vec<ShredEvent>>(128);
 
     let graph_for_decoder: Arc<ArcSwap<Graph>> = Arc::clone(&graph);
     let graph_for_arbitrage: Arc<ArcSwap<Graph>> = Arc::clone(&graph);

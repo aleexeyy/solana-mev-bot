@@ -14,13 +14,11 @@ use tokio::{
 };
 
 use crate::shred_decoders::interfaces::{
-    DecodeJob, DecodedInstruction, RawLookupTables, TargetTransaction,
+    DecodeJob, RawLookupTables, ShredEvent, TargetTransaction,
 };
 // use tokio_stream::wrappers::ReceiverStream;
 use crate::{benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph};
 
-mod jupiter_v6;
-mod meteora_dlmm;
 mod meteora_v2;
 pub mod meteora_v3;
 mod orca_v3;
@@ -39,8 +37,6 @@ pub static METEORA_V3_DECODER: meteora_v3::MeteoraV3TargetTransaction =
     meteora_v3::MeteoraV3TargetTransaction;
 pub static METEORA_V2_DECODER: meteora_v2::MeteoraV2TargetTransaction =
     meteora_v2::MeteoraV2TargetTransaction;
-pub static JUPITER_V6_DECODER: jupiter_v6::JupiterV6TargetTransaction =
-    jupiter_v6::JupiterV6TargetTransaction;
 
 static DECODERS: Lazy<[&'static dyn TargetTransaction; 5]> = Lazy::new(|| {
     [
@@ -49,7 +45,6 @@ static DECODERS: Lazy<[&'static dyn TargetTransaction; 5]> = Lazy::new(|| {
         &ORCA_V3_DECODER,
         &METEORA_V3_DECODER,
         &METEORA_V2_DECODER,
-        // &JUPITER_V6_DECODER,
     ]
 });
 
@@ -96,10 +91,9 @@ pub fn get_lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
     get_lookup_tables().get(lt)
 }
 
-//TODO: implement decoding logic also for adding and removing liquidity(sometimes they do create an arbitrage opportunity)
 pub async fn decode_transaction(
     mut decode_rx: Receiver<Vec<DecodeJob>>,
-    simulate_tx: Sender<Vec<DecodedInstruction>>,
+    simulate_tx: Sender<Vec<ShredEvent>>,
     graph: Arc<Graph>,
 ) {
     while let Some(batch) = decode_rx.recv().await {
@@ -115,6 +109,7 @@ pub async fn decode_transaction(
             let mut per_tx_counts = Vec::with_capacity(batch_size);
 
             for DecodeJob {
+                slot,
                 transaction_address,
                 account_keys,
                 lookup_tables,
@@ -123,15 +118,30 @@ pub async fn decode_transaction(
             {
                 let mut decoded_ok = 0usize;
                 let mut decoded_err = 0usize;
-                let mut decoded_tx = Vec::with_capacity(instructions.len());
+                let mut decoded_tx = Vec::with_capacity(instructions.len() / 2);
 
-                for instruction in instructions {
-                    let idx = instruction.program.index();
+                for (instruction_index, instruction) in instructions.into_iter().enumerate() {
+                    let decoder_idx = instruction.program.index();
+                    let instruction_index = match u8::try_from(instruction_index) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            tracing::error!(
+                                "{:?}: instruction index too large: {}",
+                                transaction_address,
+                                instruction_index
+                            );
+                            decoded_err += 1;
+                            continue;
+                        }
+                    };
 
                     let data_slice = &instruction.data;
                     let accounts_slice = &instruction.accounts;
 
-                    match DECODERS[idx].decode(
+                    match DECODERS[decoder_idx].decode(
+                        slot,
+                        transaction_address,
+                        instruction_index,
                         &account_keys,
                         accounts_slice,
                         data_slice,
@@ -139,6 +149,7 @@ pub async fn decode_transaction(
                         &lookup_tables,
                     ) {
                         Ok(decoded_instruction) => {
+                            // TODO: send directly to the engine
                             decoded_tx.push(decoded_instruction);
                             decoded_ok += 1;
                         }
@@ -168,7 +179,7 @@ pub async fn decode_transaction(
 
         match res {
             Ok(per_tx_counts) => {
-                for (tx_address, ok, err) in per_tx_counts.into_iter() {
+                for (_, ok, err) in per_tx_counts.into_iter() {
                     let processed = ok + err;
                     tracing::debug!(
                         processed = processed,

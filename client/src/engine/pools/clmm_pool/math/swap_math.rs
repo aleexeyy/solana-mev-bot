@@ -1,14 +1,10 @@
-use super::full_math::MulDiv;
-use super::liquidity_math;
-use super::sqrt_price_math;
+use super::{full_math::MulDiv, liquidity_math, sqrt_price_math};
 use crate::engine::pools::clmm_pool::clmm_error::ErrorCode;
-
 
 pub const FEE_RATE_DENOMINATOR_VALUE: u32 = 1_000_000;
 
-
 /// Result of a swap step
-#[derive(Default, Debug)]   
+#[derive(Default, Debug)]
 pub struct SwapStep {
     /// The price after swapping the amount in/out, not to exceed the price target
     pub sqrt_price_next_x64: u128,

@@ -81,8 +81,8 @@ impl ArbitrageCycles {
 
                     if let Some(pos) = canonical.iter().position(|pool_index| {
                         let edge = &graph.edges[pool_index.0];
-                        let node_a = &graph.nodes[edge.node_lowest.0];
-                        let node_b = &graph.nodes[edge.node_highest.0];
+                        let node_a = &graph.nodes[edge.node_a.0];
+                        let node_b = &graph.nodes[edge.node_b.0];
                         node_a.address == graph.wsol_address || node_b.address == graph.wsol_address
                     }) {
                         canonical.rotate_left(pos);
@@ -92,8 +92,8 @@ impl ArbitrageCycles {
 
                     for pool_index in &canonical {
                         let edge = &graph.edges[pool_index.0];
-                        let node_a = &graph.nodes[edge.node_lowest.0];
-                        let node_b = &graph.nodes[edge.node_highest.0];
+                        let node_a = &graph.nodes[edge.node_a.0];
+                        let node_b = &graph.nodes[edge.node_b.0];
 
                         let a_bytes = node_a.address.to_bytes();
                         let b_bytes = node_b.address.to_bytes();

@@ -1,6 +1,4 @@
-use super::full_math::MulDiv;
-use super::unsafe_math::UnsafeMathTrait;
-use super::{fixed_point_64, U256};
+use super::{U256, fixed_point_64, full_math::MulDiv, unsafe_math::UnsafeMathTrait};
 
 /// Gets the next sqrt price √P' given a delta of token_0
 ///
@@ -26,7 +24,6 @@ use super::{fixed_point_64, U256};
 /// √P' = √P * L / L'
 /// √P' = √P * L / L'
 /// √P' = √P * L / (L + Δx*√P)
-///
 pub fn get_next_sqrt_price_from_amount_0_rounding_up(
     sqrt_price_x64: u128,
     liquidity: u128,
@@ -83,7 +80,6 @@ pub fn get_next_sqrt_price_from_amount_0_rounding_up(
 /// # Formula
 ///
 /// * `√P' = √P + Δy / L`
-///
 pub fn get_next_sqrt_price_from_amount_1_rounding_down(
     sqrt_price_x64: u128,
     liquidity: u128,
@@ -124,7 +120,6 @@ pub fn get_next_sqrt_price_from_input(
 /// Gets the next sqrt price given an output amount of token0 or token1
 ///
 /// Throws if price or liquidity are 0 or the next price is out of bounds
-///
 pub fn get_next_sqrt_price_from_output(
     sqrt_price_x64: u128,
     liquidity: u128,

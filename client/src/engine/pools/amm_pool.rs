@@ -13,6 +13,7 @@ pub struct AmmPool {
     pub reserve_a: u64,
     pub reserve_b: u64,
     pub fee_bps: u16,
+    pub last_slot_updated: u64,
 }
 
 impl DexPool for AmmPool {
@@ -34,6 +35,11 @@ impl DexPool for AmmPool {
     #[inline]
     fn get_reserves(&self) -> (u128, u128) {
         (self.reserve_a as u128, self.reserve_b as u128)
+    }
+
+    #[inline]
+    fn last_slot_updated(&self) -> u64 {
+        self.last_slot_updated
     }
 
     #[inline]
@@ -67,7 +73,7 @@ impl DexPool for AmmPool {
         if amount_out_u128 == 0u128 || amount_out_u128 >= reserve_out_u128 {
             return None;
         }
-        
+
         let new_reserve_out = reserve_out_u128.sub(amount_out_u128);
         let new_reserve_in = reserve_in_u128.add(amount_in_u128);
 
@@ -111,6 +117,7 @@ mod tests {
             reserve_a: 1_000_000_000,
             reserve_b: 500_000_000,
             fee_bps: 30,
+            last_slot_updated: 0,
         };
         return pool;
     }
@@ -126,6 +133,7 @@ mod tests {
             reserve_a: 0,
             reserve_b: 0,
             fee_bps: 30,
+            last_slot_updated: 0,
         };
         return pool;
     }

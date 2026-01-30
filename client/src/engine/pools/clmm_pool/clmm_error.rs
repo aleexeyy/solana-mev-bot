@@ -1,13 +1,10 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum StateError {
-}
+pub enum StateError {}
 
 #[derive(Debug, Error)]
-pub enum SwapError {
-}
-
+pub enum SwapError {}
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ErrorCode {

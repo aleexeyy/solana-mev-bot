@@ -1,7 +1,6 @@
 //! A custom implementation of https://github.com/sdroege/rust-muldiv to support phantom overflow resistant
 //! multiply-divide operations. This library uses U128 in place of u128 for u64 operations,
 //! and supports U128 operations.
-//!
 
 use super::big_num::{U128, U256, U512};
 
@@ -266,8 +265,7 @@ mod muldiv_u64_tests {
 
                     let res = val.mul_div_floor(num, den);
 
-                    let expected =
-                        (U128::from(val) * U128::from(num)) / U128::from(den);
+                    let expected = (U128::from(val) * U128::from(num)) / U128::from(den);
 
                     if expected > U128::from(u64::MAX) {
                         assert!(
@@ -325,7 +323,6 @@ mod muldiv_u64_tests {
     }
 }
 
-
 #[cfg(test)]
 mod muldiv_u128_tests {
     use super::*;
@@ -369,8 +366,7 @@ mod muldiv_u128_tests {
 
                     let res = val.mul_div_floor(*num, *den);
 
-                    let expected =
-                        (val.as_u256() * num.as_u256()) / den.as_u256();
+                    let expected = (val.as_u256() * num.as_u256()) / den.as_u256();
 
                     if expected > U128::MAX.as_u256() {
                         assert!(

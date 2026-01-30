@@ -1,6 +1,5 @@
 use super::big_num::U128;
-use crate::require;
-use crate::engine::pools::clmm_pool::clmm_error::ErrorCode;
+use crate::{engine::pools::clmm_pool::clmm_error::ErrorCode, require};
 /// The minimum tick
 pub const MIN_TICK: i32 = -443636;
 /// The minimum tick
@@ -26,7 +25,6 @@ const BIT_PRECISION: u32 = 16;
 ///
 /// # Arguments
 /// * `tick` - Price tick
-///
 pub fn get_sqrt_price_at_tick(tick: i32) -> Result<u128, ErrorCode> {
     let abs_tick = tick.abs() as u32;
     require!(abs_tick <= MAX_TICK as u32, ErrorCode::TickOutOfBounds);

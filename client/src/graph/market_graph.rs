@@ -43,14 +43,13 @@ pub struct Edge {
     pub(crate) pool_type: PoolType,
     pub(crate) dex: DexType,
     pub(crate) tick_spacing: u64,
-    pub token_vault_lowest: Pubkey,  // lowest index
-    pub token_vault_highest: Pubkey, // highest index
+    pub token_vault_a: Pubkey,
+    pub token_vault_b: Pubkey,
     pub(crate) config: Pubkey,
-    pub node_lowest: TokenId,
-    pub node_highest: TokenId,
-    pub(crate) decimals_lowest: u8,
-    pub(crate) decimals_highest: u8,
-    pub reversed: bool,
+    pub node_a: TokenId,
+    pub node_b: TokenId,
+    pub(crate) decimals_a: u8,
+    pub(crate) decimals_b: u8,
 
     // dynamic fields
     pub sqrt_price: AtomicU128,
@@ -59,16 +58,12 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub fn get_log_exchange_rate(&self, direct: bool) -> f64 {
-        self.get_exchange_rate(direct).log10()
+    pub fn get_log_exchange_rate(&self, a_to_b: bool) -> f64 {
+        self.get_exchange_rate(a_to_b).log10()
     }
 
-    pub fn get_exchange_rate(&self, direct: bool) -> f64 {
-        let decimals_diff: i32 = if self.reversed {
-            self.decimals_highest as i32 - self.decimals_lowest as i32
-        } else {
-            self.decimals_lowest as i32 - self.decimals_highest as i32
-        };
+    pub fn get_exchange_rate(&self, a_to_b: bool) -> f64 {
+        let decimals_diff: i32 = self.decimals_a as i32 - self.decimals_b as i32;
         let denominator = 10f64.powi(decimals_diff);
 
         let scaled_price: U256 = U256::from(self.sqrt_price.load(Ordering::Relaxed));
@@ -80,20 +75,20 @@ impl Edge {
 
         let price_f64 = price_f64 / 2f64.powi(128);
 
-        let exchange_rate = price_f64 * denominator;
+        let exchange_rate_a_to_b = price_f64 * denominator;
 
-        if self.reversed == direct {
-            1.0 / exchange_rate
+        if a_to_b {
+            exchange_rate_a_to_b
         } else {
-            exchange_rate
+            1.0 / exchange_rate_a_to_b
         }
     }
 
     pub(crate) fn get_other_node(&self, this_token: TokenId) -> Option<TokenId> {
-        if this_token == self.node_lowest {
-            Some(self.node_highest)
-        } else if this_token == self.node_highest {
-            Some(self.node_lowest)
+        if this_token == self.node_a {
+            Some(self.node_b)
+        } else if this_token == self.node_b {
+            Some(self.node_a)
         } else {
             None
         }
@@ -101,10 +96,10 @@ impl Edge {
 
     #[allow(dead_code)]
     pub(crate) fn get_swap_direction(&self, token_in: TokenId) -> Option<bool> {
-        if self.node_lowest == token_in {
-            return Some(!self.reversed);
-        } else if self.node_highest == token_in {
-            return Some(self.reversed);
+        if self.node_a == token_in {
+            return Some(true);
+        } else if self.node_b == token_in {
+            return Some(false);
         }
         None
     }
@@ -184,22 +179,39 @@ impl MarketGraph {
         node0_index: TokenId,
         node1_index: TokenId,
     ) -> Result<PoolId> {
-        let (token_vault_lowest, token_vault_highest, idx_lowest, idx_highest, reversed) =
-            if node0_index <= node1_index {
+        let node0_address = self
+            .nodes
+            .get(node0_index.0)
+            .ok_or_else(|| anyhow!("Invalid node0_index"))?
+            .address;
+        let node1_address = self
+            .nodes
+            .get(node1_index.0)
+            .ok_or_else(|| anyhow!("Invalid node1_index"))?
+            .address;
+
+        let (idx_a, idx_b, token_vault_a_str, token_vault_b_str) =
+            if node0_address.to_bytes() <= node1_address.to_bytes() {
                 (
-                    pool.token_vault_a.unwrap(),
-                    pool.token_vault_b.unwrap(),
                     node0_index,
                     node1_index,
-                    false,
+                    pool.token_vault_a
+                        .clone()
+                        .ok_or_else(|| anyhow!("Missing Token Vault A"))?,
+                    pool.token_vault_b
+                        .clone()
+                        .ok_or_else(|| anyhow!("Missing Token Vault B"))?,
                 )
             } else {
                 (
-                    pool.token_vault_b.unwrap(),
-                    pool.token_vault_a.unwrap(),
                     node1_index,
                     node0_index,
-                    true,
+                    pool.token_vault_b
+                        .clone()
+                        .ok_or_else(|| anyhow!("Missing Token Vault B"))?,
+                    pool.token_vault_a
+                        .clone()
+                        .ok_or_else(|| anyhow!("Missing Token Vault A"))?,
                 )
             };
         let address = Pubkey::from_str(&pool.address.unwrap())?;
@@ -209,14 +221,13 @@ impl MarketGraph {
             pool_type: pool.pool_type.unwrap(),
             dex: pool.dex.unwrap(),
             tick_spacing: pool.tick_spacing.unwrap(),
-            token_vault_lowest: Pubkey::from_str(&token_vault_lowest)?,
-            token_vault_highest: Pubkey::from_str(&token_vault_highest)?,
+            token_vault_a: Pubkey::from_str(&token_vault_a_str)?,
+            token_vault_b: Pubkey::from_str(&token_vault_b_str)?,
             config: Pubkey::from_str(&pool.config.unwrap())?,
-            node_lowest: idx_lowest,
-            node_highest: idx_highest,
-            decimals_lowest: self.nodes[idx_lowest.0].decimals,
-            decimals_highest: self.nodes[idx_highest.0].decimals,
-            reversed,
+            node_a: idx_a,
+            node_b: idx_b,
+            decimals_a: self.nodes[idx_a.0].decimals,
+            decimals_b: self.nodes[idx_b.0].decimals,
             sqrt_price: AtomicU128::new(0),
             liquidity: AtomicU128::new(0),
             current_tick_index: AtomicI32::new(0),
@@ -227,11 +238,11 @@ impl MarketGraph {
         self.address_to_edge.insert(address, PoolId(index));
 
         self.adjacency
-            .get_mut(&idx_lowest)
+            .get_mut(&idx_a)
             .unwrap()
             .insert(PoolId(index));
         self.adjacency
-            .get_mut(&idx_highest)
+            .get_mut(&idx_b)
             .unwrap()
             .insert(PoolId(index));
 

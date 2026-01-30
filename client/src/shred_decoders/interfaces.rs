@@ -31,6 +31,7 @@ pub struct InstructionData {
 }
 
 pub struct DecodeJob {
+    pub slot: u64,
     pub transaction_address: Signature,
     pub account_keys: Arc<[Pubkey]>,
     pub lookup_tables: Arc<Vec<ReducedLookupTable>>,
@@ -40,70 +41,58 @@ pub struct DecodeJob {
 pub trait TargetTransaction: Sync + Send {
     fn decode(
         &self,
+        slot: u64,
+        signature: Signature,
+        instruction_index: u8,
         account_keys: &Arc<[Pubkey]>,
         accounts: &[u8],
         data: &[u8],
         market: &MarketGraph,
         lookup_tables: &Arc<Vec<ReducedLookupTable>>,
-    ) -> anyhow::Result<DecodedInstruction>;
-
-    // fn decode_swap_instruction(
-    //     &self,
-    //     data: &[u8],
-    //     accounts: &[u8],
-    //     account_keys: &[Pubkey],
-    //     graph: &Arc<Graph>,
-    // ) -> anyhow::Result<DecodedInstruction>;
-    //
-    // fn decode_remove_liquidity_instruction(
-    //     &self,
-    //     data: &[u8],
-    //     accounts: &[u8],
-    //     account_keys: &[Pubkey],
-    //     graph: &Arc<Graph>,
-    // ) -> anyhow::Result<DecodedInstruction>;
-    //
-    // fn decode_add_liquidity_instruction(
-    //     &self,
-    //     data: &[u8],
-    //     accounts: &[u8],
-    //     account_keys: &[Pubkey],
-    //     graph: &Arc<Graph>,
-    // ) -> anyhow::Result<DecodedInstruction>;
+    ) -> anyhow::Result<ShredEvent>;
 }
 
-#[derive(Debug)]
-pub enum OperationType {
-    SwapExactInput {
-        amount_in: u64,
-        minimum_amount_out: u64,
-        sqrt_price_limit: u128,
-    },
-    SwapExactOutput {
-        amount_out: u64,
-        maximum_amount_in: u64,
-        sqrt_price_limit: u128,
-    },
-    AddLiquidity {
-        add_amount_a: u64,
-        add_amount_b: u64,
-    },
-    RemoveLiquidity {
-        remove_amount_a: u64,
-        remove_amount_b: u64,
-    },
+#[derive(Debug, Clone)]
+pub enum SwapConstraint {
+    SqrtPriceLimit(u128),
+    TokenAmountLimit(u64),
 }
 
-//TODO: probably need also to add Pool Type, V2, V3, DLMM
-#[derive(Debug)]
-pub struct DecodedInstruction {
+#[derive(Debug, Clone)]
+pub enum ShredEventType {
+    Swap {
+        amount_specified: u64,
+        limit: SwapConstraint,
+        a_to_b: bool,
+        is_base_input: bool,
+    },
+    AddLiquidity,
+    RemoveLiquidity,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShredEvent {
+    pub signature: Signature,
+    pub slot: u64,
     pub pool_address: Pubkey,
-    pub token_in_address: Pubkey,
-    pub token_out_address: Pubkey,
-    pub operation_type: OperationType, // TODO: Check Operation Type and Adjust the Sign of change liquidity based on Operation Type
+    pub instruction_index: u8,
+    pub event: ShredEventType,
 }
 
-#[derive(Debug)]
-pub struct DecodedTransaction {
-    pub instructions: Vec<DecodedInstruction>,
+impl ShredEvent {
+    pub fn new(
+        signature: Signature,
+        slot: u64,
+        pool_address: Pubkey,
+        instruction_index: u8,
+        event: ShredEventType,
+    ) -> Self {
+        Self {
+            signature,
+            slot,
+            pool_address,
+            instruction_index,
+            event,
+        }
+    }
 }
