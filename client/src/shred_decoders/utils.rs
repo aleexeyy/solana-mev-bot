@@ -12,6 +12,41 @@ const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 pub struct DecodingUtils {}
 
 impl DecodingUtils {
+    fn resolve_lookup_table_address(
+        mut address_index: usize,
+        lookup_tables: &Arc<Vec<ReducedLookupTable>>,
+        get_table_addresses: impl Fn(&Pubkey) -> Option<Arc<[Pubkey]>>,
+    ) -> anyhow::Result<Pubkey> {
+        // Solana v0 dynamic account ordering:
+        // 1) For each lookup table in order: all writable indexes
+        // 2) For each lookup table in order: all readonly indexes
+        for lookup_table in lookup_tables.iter() {
+            if address_index < lookup_table.writable_indexes.len() {
+                let idx = usize::from(lookup_table.writable_indexes[address_index]);
+                let lookup_addresses =
+                    get_table_addresses(&lookup_table.account_key).ok_or_else(|| {
+                        anyhow!("Unsupported lookup table: {}", lookup_table.account_key)
+                    })?;
+                return Ok(lookup_addresses[idx]);
+            }
+            address_index -= lookup_table.writable_indexes.len();
+        }
+
+        for lookup_table in lookup_tables.iter() {
+            if address_index < lookup_table.readonly_indexes.len() {
+                let idx = usize::from(lookup_table.readonly_indexes[address_index]);
+                let lookup_addresses =
+                    get_table_addresses(&lookup_table.account_key).ok_or_else(|| {
+                        anyhow!("Unsupported lookup table: {}", lookup_table.account_key)
+                    })?;
+                return Ok(lookup_addresses[idx]);
+            }
+            address_index -= lookup_table.readonly_indexes.len();
+        }
+
+        Err(anyhow!("Index out of bounds"))
+    }
+
     pub fn get_account_address(
         index: usize,
         account_keys: &[Pubkey],
@@ -20,26 +55,11 @@ impl DecodingUtils {
         if index < account_keys.len() {
             return Ok(account_keys[index]);
         }
-        let mut address_index = index - account_keys.len();
 
-        for lookup_table in lookup_tables.iter() {
-            if address_index < lookup_table.indexes.len() {
-                if let Some(lookup_addresses) =
-                    get_lookup_table_addresses(&lookup_table.account_key)
-                {
-                    let idx = usize::from(lookup_table.indexes[address_index]);
-                    return Ok(lookup_addresses[idx]);
-                } else {
-                    return Err(anyhow!(
-                        "Unsupported lookup table: {}",
-                        lookup_table.account_key
-                    ));
-                }
-            } else {
-                address_index -= lookup_table.indexes.len();
-            }
-        }
-        Err(anyhow!("Index out of bounds"))
+        let address_index = index - account_keys.len();
+        Self::resolve_lookup_table_address(address_index, lookup_tables, |table_key| {
+            get_lookup_table_addresses(table_key).cloned()
+        })
     }
 
     pub fn find_token_account_address(owner: &Pubkey, token_mint_address: &Pubkey) -> Pubkey {
@@ -120,5 +140,66 @@ impl DecodingUtils {
 
             Ok(Pubkey::from(hash.to_bytes()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn resolves_v0_loaded_addresses_in_writable_then_readonly_order() {
+        let t1 = Pubkey::new_unique();
+        let t2 = Pubkey::new_unique();
+
+        let addr_t1: Arc<[Pubkey]> =
+            Arc::from(vec![Pubkey::new_unique(), Pubkey::new_unique()].into_boxed_slice());
+        let addr_t2: Arc<[Pubkey]> =
+            Arc::from(vec![Pubkey::new_unique(), Pubkey::new_unique()].into_boxed_slice());
+
+        let mut tables: HashMap<Pubkey, Arc<[Pubkey]>> = HashMap::new();
+        tables.insert(t1, addr_t1.clone());
+        tables.insert(t2, addr_t2.clone());
+
+        // For v0 ordering, dynamic keys are:
+        // writable: t1[w0], t2[w0], readonly: t1[r0], t2[r0]
+        let lookup_tables: Arc<Vec<ReducedLookupTable>> = Arc::new(vec![
+            ReducedLookupTable {
+                account_key: t1,
+                writable_indexes: Arc::from([0u8].as_slice()),
+                readonly_indexes: Arc::from([1u8].as_slice()),
+            },
+            ReducedLookupTable {
+                account_key: t2,
+                writable_indexes: Arc::from([1u8].as_slice()),
+                readonly_indexes: Arc::from([0u8].as_slice()),
+            },
+        ]);
+
+        let resolved0 = DecodingUtils::resolve_lookup_table_address(0, &lookup_tables, |k| {
+            tables.get(k).cloned()
+        })
+        .unwrap();
+        assert_eq!(resolved0, addr_t1[0]);
+
+        let resolved1 = DecodingUtils::resolve_lookup_table_address(1, &lookup_tables, |k| {
+            tables.get(k).cloned()
+        })
+        .unwrap();
+        assert_eq!(resolved1, addr_t2[1]);
+
+        let resolved2 = DecodingUtils::resolve_lookup_table_address(2, &lookup_tables, |k| {
+            tables.get(k).cloned()
+        })
+        .unwrap();
+        assert_eq!(resolved2, addr_t1[1]);
+
+        let resolved3 = DecodingUtils::resolve_lookup_table_address(3, &lookup_tables, |k| {
+            tables.get(k).cloned()
+        })
+        .unwrap();
+        assert_eq!(resolved3, addr_t2[0]);
     }
 }

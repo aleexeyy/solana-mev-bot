@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     let graph = Arc::new(ArcSwap::new(Arc::new(graph)));
 
     let (decode_tx, decode_rx) = mpsc::channel::<Vec<DecodeJob>>(128);
-    let (simulate_tx, simulate_rx) = mpsc::channel::<Vec<ShredEvent>>(128);
+    let (simulate_tx, simulate_rx) = mpsc::channel::<ShredEvent>(1024);
 
     let graph_for_decoder: Arc<ArcSwap<Graph>> = Arc::clone(&graph);
     let graph_for_arbitrage: Arc<ArcSwap<Graph>> = Arc::clone(&graph);

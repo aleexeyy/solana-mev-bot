@@ -2,8 +2,9 @@ use solana_sdk::pubkey::Pubkey;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolType {
-    Amm,
-    Clmm,
+    CPMM,
+    CLMM,
+    DLMM,
 }
 
 pub struct SwapQuoteResult {

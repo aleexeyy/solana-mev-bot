@@ -96,7 +96,7 @@ impl MeteoraV2TargetTransaction {
 
         let edge = market
             .get_edge(&pool_address)
-            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+            .ok_or_else(|| anyhow!("Pool not found in MarketGraph: {}", pool_address))?;
         let node_a_index: TokenId = edge.node_a;
         let node_b_index: TokenId = edge.node_b;
 

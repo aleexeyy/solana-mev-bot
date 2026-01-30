@@ -96,7 +96,7 @@ impl OrcaV3TargetTransaction {
         let a_to_b = is_direct;
         let _ = market
             .get_edge(&pool_address)
-            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+            .ok_or_else(|| anyhow!("Pool not found in MarketGraph: {}", pool_address))?;
 
         Ok((
             pool_address,
@@ -169,7 +169,7 @@ impl OrcaV3TargetTransaction {
 
         let edge = market
             .get_edge(&pool_address)
-            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+            .ok_or_else(|| anyhow!("Pool not found in MarketGraph: {}", pool_address))?;
         let token_a = market
             .token_address(edge.node_a)
             .ok_or_else(|| anyhow!("Invalid token_a node index"))?;

@@ -77,17 +77,10 @@ pub fn filter_by_programs(entries: &[Entry], slot: u64) -> Vec<DecodeJob> {
                         lookup_tables: Arc::new(
                             lookup_tables
                                 .iter()
-                                .map(|table| {
-                                    let mut combined = Vec::with_capacity(
-                                        table.writable_indexes.len() + table.readonly_indexes.len(),
-                                    );
-                                    combined.extend_from_slice(&table.writable_indexes);
-                                    combined.extend_from_slice(&table.readonly_indexes);
-                                    let indexes: Arc<[u8]> = Arc::from(combined);
-                                    ReducedLookupTable {
-                                        account_key: table.account_key,
-                                        indexes,
-                                    }
+                                .map(|table| ReducedLookupTable {
+                                    account_key: table.account_key,
+                                    writable_indexes: Arc::from(table.writable_indexes.as_slice()),
+                                    readonly_indexes: Arc::from(table.readonly_indexes.as_slice()),
                                 })
                                 .collect(),
                         ),

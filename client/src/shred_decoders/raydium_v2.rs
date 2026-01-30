@@ -104,7 +104,7 @@ impl RaydiumV2TargetTransaction {
 
         let edge = market
             .get_edge(&pool_address)
-            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+            .ok_or_else(|| anyhow!("Pool not found in MarketGraph: {}", pool_address))?;
         let token_a = market
             .token_address(edge.node_a)
             .ok_or_else(|| anyhow!("Invalid token_a node index"))?;

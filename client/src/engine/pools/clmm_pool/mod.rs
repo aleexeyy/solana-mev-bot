@@ -95,7 +95,7 @@ impl DexPool for ClmmPool {
 
     #[inline]
     fn pool_type(&self) -> PoolType {
-        PoolType::Clmm
+        PoolType::CLMM
     }
     #[inline]
     fn last_slot_updated(&self) -> u64 {

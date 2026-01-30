@@ -106,7 +106,7 @@ impl RaydiumV3TargetTransaction {
         let a_to_b = if let Some(edge) = market.get_edge(&pool_address) {
             input_vault == edge.token_vault_a
         } else {
-            return Err(anyhow!("Unsupported Pool"));
+            return Err(anyhow!("Pool not found in MarketGraph: {}", pool_address));
         };
 
         Ok((
@@ -173,7 +173,7 @@ impl RaydiumV3TargetTransaction {
 
         let edge = market
             .get_edge(&pool_address)
-            .ok_or_else(|| anyhow!("Unsupported Pool"))?;
+            .ok_or_else(|| anyhow!("Pool not found in MarketGraph: {}", pool_address))?;
         let token_a = market
             .token_address(edge.node_a)
             .ok_or_else(|| anyhow!("Invalid token_a node index"))?;

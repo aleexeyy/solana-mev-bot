@@ -95,7 +95,7 @@ impl DexPool for AmmPool {
 
     #[inline]
     fn pool_type(&self) -> PoolType {
-        PoolType::Amm
+        PoolType::CPMM
     }
 }
 

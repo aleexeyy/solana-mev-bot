@@ -8,7 +8,8 @@ pub type RawLookupTables = HashMap<String, Vec<String>>;
 
 pub struct ReducedLookupTable {
     pub account_key: Pubkey,
-    pub indexes: Arc<[u8]>,
+    pub writable_indexes: Arc<[u8]>,
+    pub readonly_indexes: Arc<[u8]>,
 }
 
 impl Default for ReducedLookupTable {
@@ -20,7 +21,8 @@ impl ReducedLookupTable {
     pub fn new() -> Self {
         ReducedLookupTable {
             account_key: Pubkey::default(),
-            indexes: Arc::default(),
+            writable_indexes: Arc::default(),
+            readonly_indexes: Arc::default(),
         }
     }
 }

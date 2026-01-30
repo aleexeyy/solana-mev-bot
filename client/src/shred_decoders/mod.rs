@@ -13,11 +13,11 @@ use tokio::{
     task,
 };
 
-use crate::shred_decoders::interfaces::{
-    DecodeJob, RawLookupTables, ShredEvent, TargetTransaction,
+use crate::{
+    benchmark_tools::measure_cpu_bound::get_cpu_time,
+    graph::Graph,
+    shred_decoders::interfaces::{DecodeJob, RawLookupTables, ShredEvent, TargetTransaction},
 };
-// use tokio_stream::wrappers::ReceiverStream;
-use crate::{benchmark_tools::measure_cpu_bound::get_cpu_time, graph::Graph};
 
 mod meteora_v2;
 pub mod meteora_v3;
@@ -93,7 +93,7 @@ pub fn get_lookup_table_addresses(lt: &Pubkey) -> Option<&Arc<[Pubkey]>> {
 
 pub async fn decode_transaction(
     mut decode_rx: Receiver<Vec<DecodeJob>>,
-    simulate_tx: Sender<Vec<ShredEvent>>,
+    simulate_tx: Sender<ShredEvent>,
     graph: Arc<Graph>,
 ) {
     while let Some(batch) = decode_rx.recv().await {
@@ -103,10 +103,10 @@ pub async fn decode_transaction(
         let before_cpu = get_cpu_time();
 
         let graph_ref: Arc<Graph> = Arc::clone(&graph);
-        let simulate_tx_ref = simulate_tx.clone();
 
         let res = task::spawn_blocking(move || {
             let mut per_tx_counts = Vec::with_capacity(batch_size);
+            let mut decoded_events: Vec<ShredEvent> = Vec::new();
 
             for DecodeJob {
                 slot,
@@ -118,7 +118,6 @@ pub async fn decode_transaction(
             {
                 let mut decoded_ok = 0usize;
                 let mut decoded_err = 0usize;
-                let mut decoded_tx = Vec::with_capacity(instructions.len() / 2);
 
                 for (instruction_index, instruction) in instructions.into_iter().enumerate() {
                     let decoder_idx = instruction.program.index();
@@ -135,6 +134,7 @@ pub async fn decode_transaction(
                         }
                     };
 
+                    // TODO: instruction inde is based on bathc not on single transaction
                     let data_slice = &instruction.data;
                     let accounts_slice = &instruction.accounts;
 
@@ -149,8 +149,7 @@ pub async fn decode_transaction(
                         &lookup_tables,
                     ) {
                         Ok(decoded_instruction) => {
-                            // TODO: send directly to the engine
-                            decoded_tx.push(decoded_instruction);
+                            decoded_events.push(decoded_instruction);
                             decoded_ok += 1;
                         }
                         Err(err) => {
@@ -161,24 +160,15 @@ pub async fn decode_transaction(
                     }
                 }
 
-                if !decoded_tx.is_empty() {
-                    let simulate_tx_clone = simulate_tx_ref.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = simulate_tx_clone.send(decoded_tx).await {
-                            tracing::debug!("simulate_tx closed: {:?}", e);
-                        }
-                    });
-                }
-
                 per_tx_counts.push((transaction_address, decoded_ok, decoded_err));
             }
 
-            per_tx_counts
+            (per_tx_counts, decoded_events)
         })
         .await;
 
         match res {
-            Ok(per_tx_counts) => {
+            Ok((per_tx_counts, decoded_events)) => {
                 for (_, ok, err) in per_tx_counts.into_iter() {
                     let processed = ok + err;
                     tracing::debug!(
@@ -187,6 +177,13 @@ pub async fn decode_transaction(
                         err = err,
                         "decoded transaction results"
                     );
+                }
+
+                for event in decoded_events {
+                    if let Err(e) = simulate_tx.send(event).await {
+                        tracing::debug!("simulate_tx closed: {:?}", e);
+                        break;
+                    }
                 }
             }
             Err(err) => {
