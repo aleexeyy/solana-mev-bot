@@ -1,5 +1,7 @@
 use solana_sdk::pubkey::Pubkey;
 
+use crate::shred_decoders::interfaces::SwapConstraint;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolType {
     CPMM,
@@ -7,13 +9,34 @@ pub enum PoolType {
     DLMM,
 }
 
+#[derive(Debug)]
 pub struct SwapQuoteResult {
+    pub amount_in: u64,
     pub amount_out: u64,
     pub new_reserve_in: u64,
     pub new_reserve_out: u64,
 }
 
-pub struct QuoteSwapContext {}
+
+#[derive(Debug)]
+pub struct SwapQuoteInput {
+    pub(crate) slot: u64,
+    pub(crate) amount_specified: u64,
+    pub(crate) limit: SwapConstraint,
+    pub(crate) a_to_b: bool,
+    pub(crate) is_exact_input: bool,
+}
+
+#[derive(Debug)]
+pub enum SwapQuoteError {
+    PoolNotExecutable,
+    ZeroAmount,
+    InsufficientLiquidity,
+    ConstraintViolated,
+    Overflow,
+    SqrtPriceOutOfBounds,
+}
+
 
 pub trait DexPool {
     fn address(&self) -> &Pubkey;
@@ -24,7 +47,9 @@ pub trait DexPool {
 
     fn get_reserves(&self) -> (u128, u128);
 
-    fn get_swap_quote(&self, amount_in: u64, a_to_b: bool) -> Option<SwapQuoteResult>;
+
+    // TODO: change option to result
+    fn get_swap_quote(&self, input: SwapQuoteInput) -> Result<SwapQuoteResult, SwapQuoteError>;
 
     fn can_execute(&self) -> bool;
 

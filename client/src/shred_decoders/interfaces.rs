@@ -74,10 +74,10 @@ pub enum ShredEventType {
 
 #[derive(Debug, Clone)]
 pub struct ShredEvent {
-    pub signature: Signature,
-    pub slot: u64,
-    pub pool_address: Pubkey,
-    pub instruction_index: u8,
+    pub signature: Signature, // debug, duplicates filtering
+    pub slot: u64,  //
+    pub pool_address: Pubkey, // used for pool identification
+    pub instruction_index: u8, // debug
     pub event: ShredEventType,
 }
 
